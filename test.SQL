@@ -1,1 +1,0 @@
-SELECT * from player where weight>=190 and height
