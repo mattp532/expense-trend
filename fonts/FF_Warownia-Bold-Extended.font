@@ -64,7 +64,7 @@
 
 <!-- HEADER START -->
 
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Warownia Bold Extended font","description":"<b>\n        \t\tDownload Warownia Bold Extended font. Warownia Bold Extended by  Copyright (URW)++, copyright 1999 by (URW)++ Design &amp; Development; Cyrillic glyphs added by Valek Filippov, copyright 2001-2002; Vietnamese characters were added by Han The Thanh; copyright 2006, 2008 for TeX Gyre extensions\n        \t</b><br />\n        \t\t<strong>(Fonts by CannotIntoSpaceFonts - KineticPlasma Fonts - Personal-use only. For commercial use please contact owner.)</strong>\n        \tBold, extended sans-serif font with a modern style.<br>This font features bold, extended characters with a strong, impactful presence. The letters are sans-serif with a modern and clean design, offering excellent readability.<br>Ideal for headlines, posters, branding, and advertising where a strong visual impact is needed.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_Warownia-Bold-Extended.font","productID":"541390","releaseDate":"Aug 09 2018","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-ExtendedA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-ExtendedA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extendeda.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extendeda1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extended0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extended01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":2.81,"bestRating":5,"worstRating":0,"reviewCount":64445}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Warownia Bold Extended font","description":"<b>\n        \t\tDownload Warownia Bold Extended font. Warownia Bold Extended by  Copyright (URW)++, copyright 1999 by (URW)++ Design &amp; Development; Cyrillic glyphs added by Valek Filippov, copyright 2001-2002; Vietnamese characters were added by Han The Thanh; copyright 2006, 2008 for TeX Gyre extensions\n        \t</b><br />\n        \t\t<strong>(Fonts by CannotIntoSpaceFonts - KineticPlasma Fonts - Personal-use only. For commercial use please contact owner.)</strong>\n        \tBold, extended sans-serif font with a modern style.<br>This font features bold, extended characters with a strong, impactful presence. The letters are sans-serif with a modern and clean design, offering excellent readability.<br>Ideal for headlines, posters, branding, and advertising where a strong visual impact is needed.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_Warownia-Bold-Extended.font","productID":"541390","releaseDate":"Aug 09 2018","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-ExtendedA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-ExtendedA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extendeda.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extendeda1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extended0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/W/A/FF_Warownia-Bold-Extended01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":2.81,"bestRating":5,"worstRating":0,"reviewCount":64446}}</script>
 <header>
 	<div class="container">
 		<nav class="navbar navbar-expand-lg ">
@@ -248,7 +248,7 @@
 							<div class="font-rating text-brand mb-4">
 								<span>Warownia Bold Extended font</span><br />
 
-								<span class="font-score">2.81/5</span><div class="font-votes" >64445</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
+								<span class="font-score">2.81/5</span><div class="font-votes" >64446</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
 								<div class="font-stars">
 									<i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i>
 								</div>
@@ -832,7 +832,7 @@
                 <button class="text-small" href="#"  id="sign_up">Sign Up</button>
               </div>
               <div class="mb-3 text-center text-md-left sociallogin_buttons">
-							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=13263f45b1020325669d913730312461&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
+							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=89dfb8e7c51061f5cf2019c269963c53&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
 							<a href="https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fplus.me&redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2Findex.php%3Fp%3Dsignin2&response_type=code&client_id=1035837533261-hdrnqfegfislramb4qummsq1pfgjq774.apps.googleusercontent.com&access_type=online" class="btn btn-google btn-sm"><i class="fab fa-google"></i> google</a>	
               </div>
 
@@ -843,7 +843,7 @@
 				<input name="file" value="" type="hidden">
 				<input name="id" value="" type="hidden">  
 				<input type="hidden" name="submit" value="1">	
-				<input type="hidden" name="token"  value="5c4058b1dbcc1bc7fd4ef46fd38a0ae06ad858a45aedfe13f46fa75b28ce2efe"/>					
+				<input type="hidden" name="token"  value="e0eba9d882dcc8f86799f76a60bdae822646ccadb68de3a3832a909aab198e48"/>					
       
                 <div class="form-group mb-1">
                   <label for="login_email" style="color: grey;">Email</label>
@@ -868,7 +868,7 @@
 				<input type="hidden" name="submit" value="1" />
 				<input name="p" value="register" type="hidden" />
 				<input name="headerhidden" value="" type="hidden" />
-				<input type="hidden" name="token"  value="5c4058b1dbcc1bc7fd4ef46fd38a0ae06ad858a45aedfe13f46fa75b28ce2efe"/>
+				<input type="hidden" name="token"  value="e0eba9d882dcc8f86799f76a60bdae822646ccadb68de3a3832a909aab198e48"/>
 
                 
                 <div class="form-group mb-1">

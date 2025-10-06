@@ -808,7 +808,7 @@
                 <button class="text-small" href="#"  id="sign_up">Sign Up</button>
               </div>
               <div class="mb-3 text-center text-md-left sociallogin_buttons">
-							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=958bc8f11993807f43edbcccba9152ac&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
+							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=273d12178ccad66d8c4034872ca0551e&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
 							<a href="https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fplus.me&redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2Findex.php%3Fp%3Dsignin2&response_type=code&client_id=1035837533261-hdrnqfegfislramb4qummsq1pfgjq774.apps.googleusercontent.com&access_type=online" class="btn btn-google btn-sm"><i class="fab fa-google"></i> google</a>	
               </div>
 
@@ -819,7 +819,7 @@
 				<input name="file" value="" type="hidden">
 				<input name="id" value="" type="hidden">  
 				<input type="hidden" name="submit" value="1">	
-				<input type="hidden" name="token"  value="10bc419d6e87dbe9d026df62ef5fc4174c51e78ab2982dc1cc95ae6881db980d"/>					
+				<input type="hidden" name="token"  value="431cb96b5c94c0f98b6a84253ea0d0e35f8420123ebcea59b8d703272be94d67"/>					
       
                 <div class="form-group mb-1">
                   <label for="login_email" style="color: grey;">Email</label>
@@ -844,7 +844,7 @@
 				<input type="hidden" name="submit" value="1" />
 				<input name="p" value="register" type="hidden" />
 				<input name="headerhidden" value="" type="hidden" />
-				<input type="hidden" name="token"  value="10bc419d6e87dbe9d026df62ef5fc4174c51e78ab2982dc1cc95ae6881db980d"/>
+				<input type="hidden" name="token"  value="431cb96b5c94c0f98b6a84253ea0d0e35f8420123ebcea59b8d703272be94d67"/>
 
                 
                 <div class="form-group mb-1">

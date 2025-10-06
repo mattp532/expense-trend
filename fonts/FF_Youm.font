@@ -64,7 +64,7 @@
 
 <!-- HEADER START -->
 
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Youm font","description":"<b>\n        \t\tDownload Youm font. Youm by Created by socialh.com\n        \t</b><br />\n        \t\t<strong>(Fonts by Socialh. Personal-use only. For commercial use please contact owner.)</strong>\n        \tA playful, rounded font with a hand-drawn feel.<br>This font features a playful and rounded style with slightly irregular strokes, giving it a hand-drawn appearance. The characters are bold and have a friendly, approachable look.<br>Ideal for children's books, playful branding, and casual invitations.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_Youm.font","productID":"279188","releaseDate":"Jan 07 2017","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_YoumA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_YoumA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youma.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youma1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youm0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youm01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":3.65,"bestRating":5,"worstRating":0,"reviewCount":124124}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Youm font","description":"<b>\n        \t\tDownload Youm font. Youm by Created by socialh.com\n        \t</b><br />\n        \t\t<strong>(Fonts by Socialh. Personal-use only. For commercial use please contact owner.)</strong>\n        \tA playful, rounded font with a hand-drawn feel.<br>This font features a playful and rounded style with slightly irregular strokes, giving it a hand-drawn appearance. The characters are bold and have a friendly, approachable look.<br>Ideal for children's books, playful branding, and casual invitations.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_Youm.font","productID":"279188","releaseDate":"Jan 07 2017","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_YoumA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_YoumA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youma.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youma1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youm0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/Y/O/FF_Youm01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":3.65,"bestRating":5,"worstRating":0,"reviewCount":124127}}</script>
 <header>
 	<div class="container">
 		<nav class="navbar navbar-expand-lg ">
@@ -248,7 +248,7 @@
 							<div class="font-rating text-brand mb-4">
 								<span>Youm font</span><br />
 
-								<span class="font-score">3.65/5</span><div class="font-votes" >124124</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
+								<span class="font-score">3.65/5</span><div class="font-votes" >124127</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
 								<div class="font-stars">
 									<i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="far fa-star"></i>
 								</div>
@@ -809,7 +809,7 @@
                 <button class="text-small" href="#"  id="sign_up">Sign Up</button>
               </div>
               <div class="mb-3 text-center text-md-left sociallogin_buttons">
-							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=5ffe084791532024e175cbb1c26dc147&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
+							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=0ca9e38ef2146088ab554e8637813e7f&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
 							<a href="https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fplus.me&redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2Findex.php%3Fp%3Dsignin2&response_type=code&client_id=1035837533261-hdrnqfegfislramb4qummsq1pfgjq774.apps.googleusercontent.com&access_type=online" class="btn btn-google btn-sm"><i class="fab fa-google"></i> google</a>	
               </div>
 
@@ -820,7 +820,7 @@
 				<input name="file" value="" type="hidden">
 				<input name="id" value="" type="hidden">  
 				<input type="hidden" name="submit" value="1">	
-				<input type="hidden" name="token"  value="bfd715f50ba6c29860527936e2627de6417d90fa67732bc57a4203e625084181"/>					
+				<input type="hidden" name="token"  value="ffe249568a26e7284c26037094ac8d19726132d4aab7c7861a4d97042d1e0b65"/>					
       
                 <div class="form-group mb-1">
                   <label for="login_email" style="color: grey;">Email</label>
@@ -845,7 +845,7 @@
 				<input type="hidden" name="submit" value="1" />
 				<input name="p" value="register" type="hidden" />
 				<input name="headerhidden" value="" type="hidden" />
-				<input type="hidden" name="token"  value="bfd715f50ba6c29860527936e2627de6417d90fa67732bc57a4203e625084181"/>
+				<input type="hidden" name="token"  value="ffe249568a26e7284c26037094ac8d19726132d4aab7c7861a4d97042d1e0b65"/>
 
                 
                 <div class="form-group mb-1">

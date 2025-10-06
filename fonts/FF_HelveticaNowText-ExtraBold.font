@@ -64,7 +64,7 @@
 
 <!-- HEADER START -->
 
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"HelveticaNowText-ExtraBold font","description":"<b>\n        \t\tDownload HelveticaNowText-ExtraBold font. HelveticaNowText-ExtraBold by Copyright ? 2019 Monotype Imaging Inc. All rights reserved.\n        \t</b><br />A bold, modern sans-serif font with excellent legibility.<br>This font features a clean, bold sans-serif style with uniform stroke widths, making it highly legible and modern. The characters are well-balanced with a strong presence, suitable for impactful design.<br>Ideal for branding, headlines, posters, and any project requiring a strong visual impact.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_HelveticaNowText-ExtraBold.font","productID":"814727","releaseDate":"Oct 18 2020","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBoldA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBoldA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBolda.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBolda1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBold0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBold01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":3.01,"bestRating":5,"worstRating":0,"reviewCount":77236}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"HelveticaNowText-ExtraBold font","description":"<b>\n        \t\tDownload HelveticaNowText-ExtraBold font. HelveticaNowText-ExtraBold by Copyright ? 2019 Monotype Imaging Inc. All rights reserved.\n        \t</b><br />A bold, modern sans-serif font with excellent legibility.<br>This font features a clean, bold sans-serif style with uniform stroke widths, making it highly legible and modern. The characters are well-balanced with a strong presence, suitable for impactful design.<br>Ideal for branding, headlines, posters, and any project requiring a strong visual impact.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_HelveticaNowText-ExtraBold.font","productID":"814727","releaseDate":"Oct 18 2020","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBoldA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBoldA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBolda.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBolda1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBold0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/H/E/FF_HelveticaNowText-ExtraBold01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":3.01,"bestRating":5,"worstRating":0,"reviewCount":77238}}</script>
 <header>
 	<div class="container">
 		<nav class="navbar navbar-expand-lg ">
@@ -248,7 +248,7 @@
 							<div class="font-rating text-brand mb-4">
 								<span>HelveticaNowText-ExtraBold font</span><br />
 
-								<span class="font-score">3.01/5</span><div class="font-votes" >77236</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
+								<span class="font-score">3.01/5</span><div class="font-votes" >77238</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
 								<div class="font-stars">
 									<i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i>
 								</div>
@@ -812,7 +812,7 @@
                 <button class="text-small" href="#"  id="sign_up">Sign Up</button>
               </div>
               <div class="mb-3 text-center text-md-left sociallogin_buttons">
-							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=6f9a365558cc76cebdbae2af26032a1a&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
+							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=6bb73202fda5e6e57ebebbc62a39baf4&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
 							<a href="https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fplus.me&redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2Findex.php%3Fp%3Dsignin2&response_type=code&client_id=1035837533261-hdrnqfegfislramb4qummsq1pfgjq774.apps.googleusercontent.com&access_type=online" class="btn btn-google btn-sm"><i class="fab fa-google"></i> google</a>	
               </div>
 
@@ -823,7 +823,7 @@
 				<input name="file" value="" type="hidden">
 				<input name="id" value="" type="hidden">  
 				<input type="hidden" name="submit" value="1">	
-				<input type="hidden" name="token"  value="020ec12317c7789cba68a1d43a909f228507f6e160570dd68be0c9037e77a578"/>					
+				<input type="hidden" name="token"  value="895a2ac1b657e72bdea461562a47efbe0bc93b55c870f14f4d57c07792c767c7"/>					
       
                 <div class="form-group mb-1">
                   <label for="login_email" style="color: grey;">Email</label>
@@ -848,7 +848,7 @@
 				<input type="hidden" name="submit" value="1" />
 				<input name="p" value="register" type="hidden" />
 				<input name="headerhidden" value="" type="hidden" />
-				<input type="hidden" name="token"  value="020ec12317c7789cba68a1d43a909f228507f6e160570dd68be0c9037e77a578"/>
+				<input type="hidden" name="token"  value="895a2ac1b657e72bdea461562a47efbe0bc93b55c870f14f4d57c07792c767c7"/>
 
                 
                 <div class="form-group mb-1">

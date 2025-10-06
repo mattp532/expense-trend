@@ -64,7 +64,7 @@
 
 <!-- HEADER START -->
 
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Sophia Nubian Bold font","description":"<b>\n        \t\tDownload Sophia Nubian Bold font. Sophia Nubian Bold by Copyright [c] SIL International, 1994-2008. All rights reserved.\n        \t</b><br />Bold, modern sans-serif with clean lines.<br>This font features bold, clean lines with a modern sans-serif style. It has a strong presence with uniform stroke widths and a straightforward design.<br>Ideal for headlines, posters, branding, and digital media.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_Sophia-Nubian-Bold.font","productID":"305133","releaseDate":"Jan 11 2017","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-BoldA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-BoldA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bolda.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bolda1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bold0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bold01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":2.9,"bestRating":5,"worstRating":0,"reviewCount":31308}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Sophia Nubian Bold font","description":"<b>\n        \t\tDownload Sophia Nubian Bold font. Sophia Nubian Bold by Copyright [c] SIL International, 1994-2008. All rights reserved.\n        \t</b><br />Bold, modern sans-serif with clean lines.<br>This font features bold, clean lines with a modern sans-serif style. It has a strong presence with uniform stroke widths and a straightforward design.<br>Ideal for headlines, posters, branding, and digital media.<br>Headlines, Logos<br>Balanced","url":"https://www.whatfontis.com/FF_Sophia-Nubian-Bold.font","productID":"305133","releaseDate":"Jan 11 2017","category":"Fonts","image":["https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-BoldA.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-BoldA1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bolda.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bolda1.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bold0.png","https://d1ly52g9wjvbd2.cloudfront.net/img16/S/O/FF_Sophia-Nubian-Bold01.png"],"aggregateRating":{"@type":"AggregateRating","ratingValue":2.9,"bestRating":5,"worstRating":0,"reviewCount":31309}}</script>
 <header>
 	<div class="container">
 		<nav class="navbar navbar-expand-lg ">
@@ -198,7 +198,7 @@
                 <img src="//d1ly52g9wjvbd2.cloudfront.net/images/spacer.gif" data-src="https://imgall.whatfontis.com/index.php?p=refresh&id=305133&text=WhatFontis.com"  alt="Sophia Nubian Bold" id="result305133"  class="img-fluid lazy"  loading="lazy" >
               </div>
               <div class="col-12 col-md-6">
-                <a href="https://www.ffonts.net/Sophia-Nubian-Bold.font" title="Download Sophia Nubian Bold Font" target="_blank" rel="noopener" onClick="gtag('event','V19-detailsA-DOWNA');" class="btn btn-lg btn-danger btn-block px-5 py-3 shaker"><i class="fas fa-download"></i> DOWNLOAD NOW</a>
+                <a href="https://www.ffonts.net/Sophia-Nubian-Bold.font" title="Download Sophia Nubian Bold Font" target="_blank" rel="noopener" onClick="gtag('event','V19-detailsA-DOWNA');" class="btn btn-lg btn-danger btn-block px-5 py-3"><i class="fas fa-download"></i> DOWNLOAD NOW</a>
               </div>
             </div>
           </div>		  
@@ -248,7 +248,7 @@
 							<div class="font-rating text-brand mb-4">
 								<span>Sophia Nubian Bold font</span><br />
 
-								<span class="font-score">2.90/5</span><div class="font-votes" >31308</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
+								<span class="font-score">2.90/5</span><div class="font-votes" >31309</div><div class="font-votes">&nbsp;votes, rated based on results identification</div>
 								<div class="font-stars">
 									<i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i>
 								</div>
@@ -814,7 +814,7 @@
                 <button class="text-small" href="#"  id="sign_up">Sign Up</button>
               </div>
               <div class="mb-3 text-center text-md-left sociallogin_buttons">
-							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=06ceb25dc157415807c03a269f8f7243&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
+							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=dd371cb4eaa8c18031e969ca39c2b8f3&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
 							<a href="https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fplus.me&redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2Findex.php%3Fp%3Dsignin2&response_type=code&client_id=1035837533261-hdrnqfegfislramb4qummsq1pfgjq774.apps.googleusercontent.com&access_type=online" class="btn btn-google btn-sm"><i class="fab fa-google"></i> google</a>	
               </div>
 
@@ -825,7 +825,7 @@
 				<input name="file" value="" type="hidden">
 				<input name="id" value="" type="hidden">  
 				<input type="hidden" name="submit" value="1">	
-				<input type="hidden" name="token"  value="cf131d0dfb0aae2d9e8d12c28cbb8a11e083826aa8cd4d254aad596d2db8f682"/>					
+				<input type="hidden" name="token"  value="1c70952dd83014ab617dada1d691907999aeef5f969bb5c684ce19d6533eab8d"/>					
       
                 <div class="form-group mb-1">
                   <label for="login_email" style="color: grey;">Email</label>
@@ -850,7 +850,7 @@
 				<input type="hidden" name="submit" value="1" />
 				<input name="p" value="register" type="hidden" />
 				<input name="headerhidden" value="" type="hidden" />
-				<input type="hidden" name="token"  value="cf131d0dfb0aae2d9e8d12c28cbb8a11e083826aa8cd4d254aad596d2db8f682"/>
+				<input type="hidden" name="token"  value="1c70952dd83014ab617dada1d691907999aeef5f969bb5c684ce19d6533eab8d"/>
 
                 
                 <div class="form-group mb-1">

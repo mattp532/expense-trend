@@ -198,7 +198,7 @@
                 <img src="//d1ly52g9wjvbd2.cloudfront.net/images/spacer.gif" data-src="https://imgall.whatfontis.com/index.php?p=refresh&id=328684&text=WhatFontis.com"  alt="Bradleys" id="result328684"  class="img-fluid lazy"  loading="lazy" >
               </div>
               <div class="col-12 col-md-6">
-                <a href="https://www.ffonts.net/Bradleys.font" title="Download Bradleys Font" target="_blank" rel="noopener" onClick="gtag('event','V19-detailsA-DOWNA');" class="btn btn-lg btn-danger btn-block px-5 py-3 shaker"><i class="fas fa-download"></i> DOWNLOAD NOW</a>
+                <a href="https://www.ffonts.net/Bradleys.font" title="Download Bradleys Font" target="_blank" rel="noopener" onClick="gtag('event','V19-detailsA-DOWNA');" class="btn btn-lg btn-danger btn-block px-5 py-3"><i class="fas fa-download"></i> DOWNLOAD NOW</a>
               </div>
             </div>
           </div>		  
@@ -812,7 +812,7 @@
                 <button class="text-small" href="#"  id="sign_up">Sign Up</button>
               </div>
               <div class="mb-3 text-center text-md-left sociallogin_buttons">
-							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=2446ff7d0fe0dd0552491f51a5849b28&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
+							<a href="https://www.facebook.com/v6.0/dialog/oauth?client_id=129420053784819&amp;state=fde9585c250093753fed8b8501a90803&amp;response_type=code&amp;sdk=php-sdk-5.5.0&amp;redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2F%3Fp%3Dsignin&amp;scope=email" class="btn btn-facebook btn-sm"><i class="fab fa-facebook-f"></i> facebook</a>	
 							<a href="https://accounts.google.com/o/oauth2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fplus.me&redirect_uri=https%3A%2F%2Fwww.whatfontis.com%2Findex.php%3Fp%3Dsignin2&response_type=code&client_id=1035837533261-hdrnqfegfislramb4qummsq1pfgjq774.apps.googleusercontent.com&access_type=online" class="btn btn-google btn-sm"><i class="fab fa-google"></i> google</a>	
               </div>
 
@@ -823,7 +823,7 @@
 				<input name="file" value="" type="hidden">
 				<input name="id" value="" type="hidden">  
 				<input type="hidden" name="submit" value="1">	
-				<input type="hidden" name="token"  value="de5d216af7401a0fb79073058d6e76d9d1799266e0a7e4a4259dd88934f0cd7f"/>					
+				<input type="hidden" name="token"  value="bff7113e8393ac389253c7e3adc5357f777458ea28218cac1f9af3d772a53a45"/>					
       
                 <div class="form-group mb-1">
                   <label for="login_email" style="color: grey;">Email</label>
@@ -848,7 +848,7 @@
 				<input type="hidden" name="submit" value="1" />
 				<input name="p" value="register" type="hidden" />
 				<input name="headerhidden" value="" type="hidden" />
-				<input type="hidden" name="token"  value="de5d216af7401a0fb79073058d6e76d9d1799266e0a7e4a4259dd88934f0cd7f"/>
+				<input type="hidden" name="token"  value="bff7113e8393ac389253c7e3adc5357f777458ea28218cac1f9af3d772a53a45"/>
 
                 
                 <div class="form-group mb-1">
