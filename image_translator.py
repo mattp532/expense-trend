@@ -7,7 +7,6 @@ import base64
 import zipfile
 import requests
 import numpy as np
-from scipy.stats import mode
 from sklearn.cluster import KMeans
 import logging
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -16,6 +15,7 @@ import replicate
 from openai import OpenAI
 import cv2
 from collections import Counter
+
 # Configure logging with elapsed time only
 class ElapsedTimeFormatter(logging.Formatter):
     def __init__(self):
@@ -56,6 +56,20 @@ class ImageTranslator:
         load_dotenv()
         self.setup_configs()
         self.font_cache = {}
+        # Cache fonts by detected bounding-box height to avoid repeated lookups
+        self.height_font_cache = {}
+        self.last_api_call = 0
+        self.api_call_delay = 1.0  # Delay between API calls in seconds
+        # Maximum delay to prevent runaway sleeps when rate limited
+        self.api_call_max_delay = 60.0
+        # map common language names to ISO codes to handle model output variations
+        self.lang_aliases = {
+            'german': 'de', 'deutsch': 'de',
+            'spanish': 'es', 'espanol': 'es',
+            'french': 'fr', 'francais': 'fr',
+            'italian': 'it',
+            'english': 'en'
+        }
         
     def setup_configs(self):
         """Initialize configuration and create required directories"""
@@ -88,9 +102,9 @@ class ImageTranslator:
         os.makedirs(self.cropped_text_dir, exist_ok=True)
         
         # OCR/Image settings
-        self.padding = 6
-        self.blur_radius = 4
-        self.confidence_threshold = 0.7  # Text with confidence below 50% will be ignored
+        self.padding = 3
+        self.blur_radius = 2
+        self.confidence_threshold = 0.83  # Text with confidence below 50% will be ignored
         
         # Fallback fonts
         self.fallback_fonts = [
@@ -317,21 +331,258 @@ class ImageTranslator:
                 try:
                     if os.path.isfile(file_path):
                         os.unlink(file_path)
-                        self.logger.info(f"Deleted: {file_path}")
+                        #self.logger.info(f"Deleted: {file_path}")
                 except Exception as e:
                     self.logger.error(f"Error deleting {file_path}: {e}")
+    # mode_color removed - not used
+    def _analyze_all_text_regions(self, text_data):
+        """Analyze all text regions at once using the Responses API.
 
+        Returns a dict mapping keys to color info. Keys include the exact OCR text,
+        the coordinate key (comma-separated bounding box), and a position key
+        (pos_{cx}_{cy}) to allow flexible matching later.
+        """
 
-    def mode_color(self, pixels):
-        """Return the mode of each RGB channel."""
-        modes = []
-        for i in range(3):
-            vals = pixels[:, i]
-            counts = Counter(vals)
-            mode_val = counts.most_common(1)[0][0]
-            modes.append(mode_val)
-        return np.array(modes, dtype=int)
+        # Build regions metadata from OCR output
+        regions = []
+        for line in text_data or []:
+            if not isinstance(line, dict):
+                continue
+            if 'text' not in line or 'boundingBox' not in line:
+                continue
+            box = line['boundingBox']
+            text = line.get('text', '')
+            words = line.get('words', [])
+            confidence = 0.0
+            if words:
+                try:
+                    confidence = sum(w.get('confidence', 0) for w in words) / len(words)
+                except Exception:
+                    confidence = 0.0
 
+            left = min(box[0::2])
+            top = min(box[1::2])
+            right = max(box[0::2])
+            bottom = max(box[1::2])
+            width = right - left
+            height = bottom - top
+
+            regions.append({
+                'text': text,
+                'box': box,
+                'confidence': confidence,
+                'bounds': {
+                    'left': int(left), 'top': int(top), 'right': int(right), 'bottom': int(bottom),
+                    'width': int(width), 'height': int(height)
+                }
+            })
+
+        # If no regions, nothing to do
+        if not regions:
+            return {}
+
+        # Build prompt
+        prompt = (
+            "Given these OCR text regions, determine appropriate text and background colors that meet WCAG AA contrast standards. "
+            "Return ONLY valid JSON in this format: {\"regions\": [{\"text\": \"exact OCR text\", \"colors\": {\"text\": [r,g,b], \"background\": [r,g,b]}, \"type\": \"heading|body\", \"contrast_ratio\": number }]}\n\n"
+            + json.dumps({'regions': regions}, indent=2)
+        )
+
+        # Prepare thumbnail/base64 (keep small)
+        try:
+            with Image.open(self.input_image_path) as img:
+                img = img.convert('RGB')
+                img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=80)
+                img_bytes = buf.getvalue()
+                # Avoid embedding huge images; only embed if small
+                if len(img_bytes) <= 200000:  # 200 KB
+                    img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                    image_payload = f"data:image/jpeg;base64,{img_base64}"
+                else:
+                    image_payload = None
+        except Exception as e:
+            self.logger.warning(f"Failed to create thumbnail for GPT analysis: {e}")
+            image_payload = None
+
+        client = OpenAI()
+        max_retries = 3
+        retry_delay = 2
+        content_text = None
+
+        for attempt in range(max_retries):
+            try:
+                # Build input structure for Responses API
+                input_item = {
+                    'role': 'user',
+                    'content': [
+                        {'type': 'input_text', 'text': prompt}
+                    ]
+                }
+                if image_payload:
+                    input_item['content'].append({'type': 'input_image', 'image_url': image_payload})
+
+                resp = client.responses.create(
+                    model='gpt-4.1',
+                    input=[input_item],
+                    temperature=0
+                )
+
+                # Extract text from different possible response shapes
+                # Prefer `output_text` when available
+                if hasattr(resp, 'output_text') and resp.output_text:
+                    content_text = resp.output_text
+                else:
+                    # Try structured output
+                    try:
+                        out = getattr(resp, 'output', None) or resp.get('output')
+                    except Exception:
+                        out = None
+
+                    if isinstance(out, list) and out:
+                        # collect any text fields
+                        parts = []
+                        for o in out:
+                            if isinstance(o, dict):
+                                # some SDKs put content under 'content'
+                                c = o.get('content') if isinstance(o.get('content'), (list, dict)) else o.get('text') or o.get('content')
+                                if isinstance(c, list):
+                                    for item in c:
+                                        if isinstance(item, dict) and 'text' in item:
+                                            parts.append(item['text'])
+                                        elif isinstance(item, str):
+                                            parts.append(item)
+                                elif isinstance(c, str):
+                                    parts.append(c)
+                        if parts:
+                            content_text = '\n'.join(parts)
+
+                if not content_text:
+                    # Fallback: string conversion
+                    try:
+                        content_text = str(resp)
+                    except Exception:
+                        content_text = None
+
+                if not content_text:
+                    raise ValueError('No text in Responses API output')
+
+                self.logger.info(f"Raw color analysis from GPT: {content_text}")
+                break
+
+            except Exception as e:
+                self.logger.warning(f"GPT analysis attempt {attempt+1} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                self.logger.error("All GPT analysis attempts failed; falling back to local analysis")
+                content_text = None
+
+        if not content_text:
+            return {}
+
+        # Strip Markdown code fences if present
+        if content_text.strip().startswith('```'):
+            try:
+                # remove ```json or ```
+                content_text = content_text.strip()
+                if content_text.startswith('```json'):
+                    content_text = content_text.split('```json', 1)[1].rsplit('```', 1)[0]
+                else:
+                    content_text = content_text.split('```', 2)[1]
+            except Exception:
+                pass
+
+        # Parse JSON
+        try:
+            parsed = json.loads(content_text)
+        except Exception as e:
+            self.logger.error(f"Failed to parse JSON from GPT response: {e}\nResponse was:\n{content_text}")
+            return {}
+
+        # Build mapping keyed by text, coordinate string, and position
+        result = {}
+        for r in parsed.get('regions', []):
+            try:
+                text = r.get('text', '')
+                colors = r.get('colors', {})
+                text_rgb = colors.get('text') or colors.get('foreground') or [0, 0, 0]
+                bg_rgb = colors.get('background') or [255, 255, 255]
+                typ = r.get('type', 'unknown')
+                contrast = float(r.get('contrast_ratio', 0)) if r.get('contrast_ratio') is not None else 0.0
+
+                entry = {
+                    'text_rgb': [int(x) for x in text_rgb],
+                    'bg_rgb': [int(x) for x in bg_rgb],
+                    'type': typ,
+                    'contrast_ratio': contrast
+                }
+
+                # key by exact text (also store a normalized lowercase key so lookups
+                # that use .lower() will match - detect_fonts uses a lowercased text key)
+                if text:
+                    result[text] = entry
+                    try:
+                        result[text.lower().strip()] = entry
+                    except Exception:
+                        pass
+
+                # if bounds or box were provided, create coord and pos keys
+                # store variants so detect_fonts (which looks for the original
+                # boundingBox string and a pos_{cx}_{cy} key) will match reliably
+                bounds = r.get('bounds') or r.get('box')
+                if bounds:
+                    # bounds may be object or list
+                    if isinstance(bounds, dict):
+                        left = int(bounds.get('left', 0))
+                        top = int(bounds.get('top', 0))
+                        right = int(bounds.get('right', left))
+                        bottom = int(bounds.get('bottom', top))
+                    elif isinstance(bounds, list) and len(bounds) >= 4:
+                        # assume [left, top, right, bottom]
+                        left, top, right, bottom = map(int, bounds[:4])
+                    else:
+                        left = top = right = bottom = None
+                    if left is not None:
+                        coord_key = f"{left},{top},{right},{bottom}"
+                        result[coord_key] = entry
+                        # center pos key
+                        cx = int((left + right) / 2)
+                        cy = int((top + bottom) / 2)
+                        pos_key = f"pos_{cx}_{cy}"
+                        result[pos_key] = entry
+
+                # Also, if the original region reported a full box/list (e.g. 8-point
+                # bounding box or Azure-style boundingBox), store that exact comma-joined
+                # string so detect_fonts' coord_key (which uses the original OCR box
+                # joined with commas) will match.
+                try:
+                    raw_box = r.get('box') or r.get('boundingBox')
+                    if isinstance(raw_box, (list, tuple)) and len(raw_box) > 0:
+                        raw_coord_key = ','.join(str(int(x)) for x in raw_box)
+                        result[raw_coord_key] = entry
+                        # also store normalized lowercased text for that coord just in case
+                        if text:
+                            try:
+                                result[f"{raw_coord_key}_text_{text.lower().strip()}"] = entry
+                            except Exception:
+                                pass
+                        # compute center from the raw box points like detect_fonts does
+                        try:
+                            cx = int(sum(raw_box[0::2]) / len(raw_box[0::2]))
+                            cy = int(sum(raw_box[1::2]) / len(raw_box[1::2]))
+                            result[f"pos_{cx}_{cy}"] = entry
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            except Exception:
+                continue
+
+        self.logger.info(f"Color analysis mapping created with {len(result)} regions")
+        return result
 
     def detect_fonts(self, text_data):
         """Detect and download fonts for each text region with robust handling of thin text."""
@@ -339,6 +590,9 @@ class ImageTranslator:
         self._clear_directory(self.cropped_text_dir)
         processed_data = []
 
+        # Get color analysis for all regions at once
+        color_analysis = self._analyze_all_text_regions(text_data)
+        
         BASE_BRIGHTNESS_MARGIN = 10  # default inversion margin
         CROP_PADDING = 2             # padding around bounding box
 
@@ -356,60 +610,80 @@ class ImageTranslator:
             cropped = image.crop((left, top, right, bottom))
             cropped_np = np.array(cropped)
 
-            # Analyze text color using segmentation mask
-            text_info = self._analyze_text_color(box)
+            # Try multiple ways to match the region with color analysis
+            analysis = None
+            match_source = None
+
+            # 1. Try exact coordinate match (8-point box joined)
+            coord_key = f"{','.join(map(str, box))}"
+            if coord_key in color_analysis:
+                analysis = color_analysis[coord_key]
+                match_source = 'coord'
+                self.logger.info(f"Found color match by coordinates for '{text_content}' (key={coord_key})")
+
+            # 2. Try text content match (lowercased)
+            if not analysis:
+                text_key = text_content.lower().strip()
+                if text_key in color_analysis:
+                    analysis = color_analysis[text_key]
+                    match_source = 'text'
+                    self.logger.info(f"Found color match by text content for '{text_content}' (key={text_key})")
+
+            # 3. Try spatial matching (center position)
+            if not analysis:
+                center_x = sum(box[0::2]) / len(box[0::2])
+                center_y = sum(box[1::2]) / len(box[1::2])
+                pos_key = f"pos_{int(center_x)}_{int(center_y)}"
+                if pos_key in color_analysis:
+                    analysis = color_analysis[pos_key]
+                    match_source = 'pos'
+                    self.logger.info(f"Found color match by position for '{text_content}' (key={pos_key})")
+            
+            if analysis:
+                text_info = {
+                    "color": tuple(analysis["text_rgb"] + [255]),
+                    "text_rgb": analysis["text_rgb"],
+                    "bg_rgb": analysis["bg_rgb"],
+                    "brightness": 0.299*analysis["text_rgb"][0] + 0.587*analysis["text_rgb"][1] + 0.114*analysis["text_rgb"][2],
+                    "bg_brightness": 0.299*analysis["bg_rgb"][0] + 0.587*analysis["bg_rgb"][1] + 0.114*analysis["bg_rgb"][2],
+                    "type": analysis.get("type", "unknown"),
+                    "match_source": match_source or 'unknown'
+                }
+                self.logger.info(f"Color analysis for '{text_content}': text_rgb={analysis['text_rgb']}, bg_rgb={analysis['bg_rgb']}")
+            else:
+                # Fallback to traditional analysis
+                self.logger.warning(f"No color match found for '{text_content}', using local analysis")
+                text_info = self._analyze_text_color(box)
+                # mark that the color came from local analysis
+                text_info["match_source"] = 'local'
+            
             bg_rgb = np.array(text_info["bg_rgb"], dtype=int)
 
-            # Create pseudo-mask for text pixels
-            diff = np.linalg.norm(cropped_np - bg_rgb, axis=2)
-            text_mask = diff > 30
-            text_mask = cv2.dilate(text_mask.astype(np.uint8), np.ones((2, 2), np.uint8), iterations=1).astype(bool)
-            text_pixels = cropped_np[text_mask]
-
-            # Fallback for very thin text: KMeans clustering
-            use_clustering = False
-            if len(text_pixels) < 10:
-                self.logger.info("Thin text detected, using clustering fallback")
-                use_clustering = True
-                h, w, _ = cropped_np.shape
-                reshaped = cropped_np.reshape(-1, 3)
-                kmeans = KMeans(n_clusters=2, random_state=0).fit(reshaped)
-                labels = kmeans.labels_
-                centers = kmeans.cluster_centers_
-                
-                # Calculate brightness for each cluster
-                brightness = 0.299*centers[:,0] + 0.587*centers[:,1] + 0.114*centers[:,2]
-                
-                # Assume text is the cluster with fewer pixels (minority)
-                cluster_0_count = np.sum(labels == 0)
-                cluster_1_count = np.sum(labels == 1)
-                
-                if cluster_0_count < cluster_1_count:
-                    text_cluster_idx = 0
-                else:
-                    text_cluster_idx = 1
-                    
-                text_color = centers[text_cluster_idx]
-                text_pixels = reshaped[labels == text_cluster_idx]
+            # Rely exclusively on GPT-provided colors for this region.
+            # If GPT returned colors for this region, use them directly. If GPT did
+            # not provide a color for this region, fall back to conservative defaults
+            # (black text on white bg) but DO NOT run local clustering/mode logic.
+            used_gpt_color = False
+            if analysis and isinstance(analysis.get('text_rgb'), (list, tuple)) and isinstance(analysis.get('bg_rgb'), (list, tuple)):
+                # Use GPT colors directly
+                text_color = np.array(analysis.get('text_rgb'), dtype=int)
+                bg_rgb_arr = np.array(analysis.get('bg_rgb'), dtype=int)
+                used_gpt_color = True
+                self.logger.info(f"Using GPT-provided colors for '{text_content}': text={text_color.tolist()}, bg={bg_rgb_arr.tolist()}")
+                # Build minimal pixel arrays for downstream numeric operations
+                text_pixels = np.array([text_color])
+                bg_pixels = np.array([bg_rgb_arr])
+                text_brightness = 0.299*text_color[0] + 0.587*text_color[1] + 0.114*text_color[2]
+                bg_brightness = 0.299*bg_rgb_arr[0] + 0.587*bg_rgb_arr[1] + 0.114*bg_rgb_arr[2]
             else:
-                # Use mode color for normal cases
-                text_color = self.mode_color(text_pixels)
-
-            # Calculate actual text and background brightness using the masks
-            text_brightness_vals = 0.299*text_pixels[:,0] + 0.587*text_pixels[:,1] + 0.114*text_pixels[:,2]
-            text_brightness = np.mean(text_brightness_vals)
-            
-            # Get background pixels and brightness
-            bg_mask = ~text_mask if not use_clustering else (labels.reshape(cropped_np.shape[:2]) != text_cluster_idx)
-            bg_pixels = cropped_np[bg_mask]
-            
-            if len(bg_pixels) > 0:
-                bg_brightness_vals = 0.299*bg_pixels[:,0] + 0.587*bg_pixels[:,1] + 0.114*bg_pixels[:,2]
-                bg_brightness = np.mean(bg_brightness_vals)
-            else:
-                # Fallback: use overall image percentiles
-                flat_brightness = 0.299*cropped_np[:,:,0] + 0.587*cropped_np[:,:,1] + 0.114*cropped_np[:,:,2]
-                bg_brightness = np.percentile(flat_brightness.flatten(), 95)
+                # No GPT analysis for this region — use conservative defaults
+                self.logger.warning(f"No GPT color found for '{text_content}'; using default black-on-white (no local clustering).")
+                text_color = np.array([0, 0, 0], dtype=int)
+                bg_rgb_arr = np.array([255, 255, 255], dtype=int)
+                text_pixels = np.array([text_color])
+                bg_pixels = np.array([bg_rgb_arr])
+                text_brightness = 0.299*text_color[0] + 0.587*text_color[1] + 0.114*text_color[2]
+                bg_brightness = 0.299*bg_rgb_arr[0] + 0.587*bg_rgb_arr[1] + 0.114*bg_rgb_arr[2]
 
             # Adaptive inversion margin
             margin = BASE_BRIGHTNESS_MARGIN if cropped_np.size > 500 else 5
@@ -417,10 +691,22 @@ class ImageTranslator:
             # Invert ONLY if text is brighter than background (light text on dark background)
             if text_brightness > bg_brightness + margin:
                 self.logger.info(f"Inverting text region '{text_content}' - light text on dark background (text: {text_brightness:.1f}, bg: {bg_brightness:.1f})")
+                # Invert the pixel crop so downstream processing sees dark-on-light,
+                # but preserve GPT-provided colors for final drawing when used_gpt_color
                 cropped_np = 255 - cropped_np
-                # Also invert the stored colors
-                text_color = 255 - text_color
-                text_info["bg_rgb"] = [255 - c for c in text_info["bg_rgb"]]
+                if not used_gpt_color:
+                    # Only invert stored colors when they were computed locally
+                    try:
+                        text_color = 255 - text_color
+                    except Exception:
+                        pass
+                    try:
+                        text_info["bg_rgb"] = [255 - c for c in text_info.get("bg_rgb", [])]
+                    except Exception:
+                        pass
+                else:
+                    # GPT provided the color; keep it as-is for final rendering
+                    self.logger.info(f"Preserving GPT color for '{text_content}' despite inversion for processing")
             else:
                 self.logger.info(f"No inversion needed for '{text_content}' - text is darker than background (text: {text_brightness:.1f}, bg: {bg_brightness:.1f})")
 
@@ -441,8 +727,24 @@ class ImageTranslator:
             crop_path = os.path.join(self.cropped_text_dir, f"text_{len(processed_data)}.png")
             cropped.save(crop_path)
 
-            # Detect font
-            font_info = self.identify_font(crop_path)
+            # Detect font (identify_font will try to download/extract a font from the API
+            # suggestions; if none is available it will fall back to local name-based lookup)
+            # Before calling identify_font (which may call WhatFontIs), check
+            # if we've already discovered a font for this integer height and reuse it.
+            height_key = int(box[3] - box[1]) if len(box) >= 4 else int(bottom - top)
+            font_info = None
+            if height_key in self.height_font_cache:
+                cached = self.height_font_cache[height_key]
+                self.logger.info(f"Reusing cached font for height {height_key}: {cached.get('font_title')} -> {cached.get('font_path')}")
+                font_info = cached.copy()
+            else:
+                font_info = self.identify_font(crop_path)
+                # store in height cache if a font_path was found
+                try:
+                    if font_info and font_info.get('font_path'):
+                        self.height_font_cache[height_key] = font_info.copy()
+                except Exception:
+                    pass
             font_info.update({
                 "text_color": tuple(text_color.astype(int).tolist()) + (255,),
                 "text_rgb": text_color.astype(int).tolist(),
@@ -450,6 +752,19 @@ class ImageTranslator:
                 "text_brightness": text_brightness,
                 "bg_brightness": bg_brightness
             })
+            # no additional fuzzy/visual matches are performed here - identify_font
+            # already uses the WhatFontIs suggestion first and then local name lookup
+            # Attach provenance so generate_final_image can log where color came from
+            try:
+                font_info["color_source"] = text_info.get("match_source", match_source or ('gpt' if analysis else 'local'))
+                font_info["matched_by"] = match_source
+                font_info["used_gpt_color"] = bool(used_gpt_color)
+                if used_gpt_color:
+                    # preserve the original GPT values for auditing
+                    font_info["gpt_text_rgb"] = analysis.get('text_rgb')
+                    font_info["gpt_bg_rgb"] = analysis.get('bg_rgb')
+            except Exception:
+                pass
 
             # Average OCR confidence
             word_confidences = [w.get("confidence", 0) for w in line.get("words", [])]
@@ -472,101 +787,144 @@ class ImageTranslator:
         return {"screenshot_id": self.input_image_path, "texts": processed_data}
 
     def identify_font(self, image_path):
-        """Identify font using WhatFontIs API, prioritizing bold/semi-bold fonts."""
+        """Identify font using WhatFontIs API with rate limiting"""
         if not os.path.exists(image_path):
             self.logger.error(f"Image not found: {image_path}")
             return self._get_default_font_info()
-
+            
         try:
             with open(image_path, "rb") as f:
                 image_b64 = base64.b64encode(f.read()).decode("utf-8")
-
+                
             payload = {
                 "API_KEY": self.whatfontis_key,
                 "IMAGEBASE64": 1,
                 "urlimagebase64": image_b64,
                 "NOTTEXTBOXSDETECTION": 0,
                 "FREEFONTS": 1,
-                "limit": 20,
+                "limit": 3
             }
-
-            self.logger.info(f"Sending font detection request for {image_path}")
             response = requests.post(self.whatfontis_endpoint, data=payload, timeout=30)
-            
-            if response.status_code != 200:
-                self.logger.warning(f"Font API returned status {response.status_code}")
-                self.logger.warning(f"Response text: {response.text[:500]}")
-                return self._get_default_font_info()
+            # Record when the request completed
+            self.last_api_call = time.time()
 
-            # Log raw response for debugging
-            self.logger.info(f"Font API raw response: {response.text[:1000]}")
-            
-            try:
-                fonts = response.json()
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse JSON response: {e}")
-                self.logger.error(f"Raw response: {response.text}")
-                return self._get_default_font_info()
-            
-            # Validate response structure
-            if not fonts:
-                self.logger.warning(f"Font API returned empty response for {image_path}")
+            self.logger.info(f"WhatFontIs response status: {response.status_code}")
+            if response.status_code != 200:
+                # Log a truncated body for debugging
+                try:
+                    self.logger.debug(f"WhatFontIs response body: {response.text[:400]}")
+                except Exception:
+                    pass
+
+            if response.status_code == 429:
+                # User requested no rate-limiting logic; just log and return default.
+                self.logger.warning("Rate limit exceeded when calling WhatFontIs; returning default font info")
                 return self._get_default_font_info()
                 
-            if not isinstance(fonts, list):
-                self.logger.warning(f"Font API returned non-list response: {type(fonts)}")
-                self.logger.warning(f"Response: {fonts}")
-                return self._get_default_font_info()
+            if response.status_code == 200:
+                try:
+                    fonts = response.json()
+                except Exception:
+                    fonts = None
+                self.logger.info(f"WhatFontIs returned {len(fonts) if fonts else 0} suggestions")
+                if fonts:
+                    # For each suggestion, prefer exact local matches first, then try
+                    # downloadable assets returned by the API, then try ffonts.net
+                    # downloads by name. If none of those succeed, we'll fall back
+                    # to a more permissive local similarity search after iterating.
+                    name_keys = ['title', 'name', 'font', 'fontname', 'font_title']
+
+                    # 1) Try exact/local substring matches first for each suggestion
+                    for font in fonts[:3]:
+                        for key in name_keys:
+                            name = font.get(key)
+                            if not name:
+                                continue
+                            exact_local = self.find_local_font_exact(name)
+                            if exact_local:
+                                self.logger.info(f"Successfully matched local font by exact name: {name} (key={key})")
+                                return {
+                                    "font_title": name,
+                                    "font_url": None,
+                                    "font_path": exact_local,
+                                    "font_source": "local",
+                                    "confidence": font.get("confidence", "unknown")
+                                }
+
+                    # 2) Try downloadable assets included in the suggestion objects
+                    for font in fonts[:3]:  # Try top 3 suggestions
+                        try:
+                            fetched = self._try_fetch_font_from_suggestion(font)
+                            if fetched:
+                                self.logger.info(f"Downloaded/extracted font for suggestion: {font.get('title') or font.get('name')}")
+                                return {
+                                    "font_title": font.get("title", font.get('name', 'unknown')),
+                                    "font_url": None,
+                                    "font_path": fetched,
+                                    "font_source": "whatfontis",
+                                    "confidence": font.get("confidence", "unknown")
+                                }
+                        except Exception as e:
+                            self.logger.debug(f"Failed to fetch font from suggestion: {e}")
+
+                    # 3) Try to download from ffonts.net using the suggestion names
+                    for font in fonts[:3]:
+                        for key in name_keys:
+                            name = font.get(key)
+                            if not name:
+                                continue
+                            try:
+                                downloaded = self.download_font(name)
+                                if downloaded:
+                                    self.logger.info(f"Downloaded font from ffonts.net for suggestion name: {name}")
+                                    return {
+                                        "font_title": name,
+                                        "font_url": None,
+                                        "font_path": downloaded,
+                                        "font_source": "ffonts.net",
+                                        "confidence": font.get("confidence", "unknown")
+                                    }
+                            except Exception as e:
+                                self.logger.debug(f"ffonts.net download attempt failed for '{name}': {e}")
+
+                    # 4) Finally, try a permissive local similarity search across suggested names
+                    for font in fonts[:3]:
+                        for key in name_keys:
+                            name = font.get(key)
+                            if not name:
+                                continue
+                            font_path = self.find_local_font(name)
+                            if font_path:
+                                self.logger.info(f"Successfully matched local font by similar name: {name} (key={key})")
+                                return {
+                                    "font_title": name,
+                                    "font_url": None,
+                                    "font_path": font_path,
+                                    "font_source": "local",
+                                    "confidence": font.get("confidence", "unknown")
+                                }
+
+                    try:
+                        suggested_titles = [f.get('title') or f.get('name') for f in fonts[:3]]
+                    except Exception:
+                        suggested_titles = []
+                    self.logger.warning(f"No matching local fonts found for suggestions: {suggested_titles}")
             
-            self.logger.info(f"Found {len(fonts)} font candidates")
-
-            # Prioritize bold/semi-bold fonts
-            bold_keywords = ["bold", "semibold", "semi bold", "demibold", "heavy", "black"]
-
-            def is_boldish(title: str) -> bool:
-                if not title:
-                    return False
-                title_lower = title.lower()
-                return any(k in title_lower for k in bold_keywords)
-
-            # Sort: boldish fonts first, but keep original order within each group
-            fonts.sort(key=lambda f: not is_boldish(f.get("title", "")))
-
-            font = fonts[0]
-            font_title = font.get("title", "unknown")
+            self.logger.warning(f"Font detection failed for image '{image_path}': {response.status_code}")
+            if response.status_code != 200:
+                self.logger.error(f"API response: {response.text}")
+            return self._get_default_font_info()
             
-            self.logger.info(f"Selected font: '{font_title}' (is_boldish: {is_boldish(font_title)})")
-            
-            # Try to download the font
-            font_path = self.download_font(font_title)
-            
-            if font_path:
-                self.logger.info(f"Successfully downloaded font to: {font_path}")
-            else:
-                self.logger.warning(f"Failed to download font: {font_title}")
-
-            return {
-                "font_title": font_title,
-                "font_url": font.get("url"),
-                "font_path": font_path,
-                "font_source": "ffonts.net" if font_path else "failed",
-                "confidence": font.get("confidence", "unknown")
-            }
-
         except requests.exceptions.Timeout:
-            self.logger.error(f"Font detection timed out for {image_path}")
+            self.logger.error(f"Font detection timeout for image '{image_path}'")
             return self._get_default_font_info()
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Network error during font detection: {e}")
-            return self._get_default_font_info()
-        except KeyError as e:
-            self.logger.error(f"Missing expected key in font response: {e}")
-            self.logger.error(f"Font data: {fonts[0] if fonts else 'N/A'}")
+            self.logger.error(f"Font detection network error for image '{image_path}': {e}")
             return self._get_default_font_info()
         except Exception as e:
-            self.logger.error(f"Font detection error for {image_path}: {e}", exc_info=True)
+            self.logger.error(f"Font detection error for image '{image_path}': {e}")
             return self._get_default_font_info()
-        
+
     def _get_default_font_info(self):
         """Return default font info when detection fails"""
         return {
@@ -576,190 +934,455 @@ class ImageTranslator:
             "font_source": "none",
             "confidence": "unknown"
         }
+
+    def _try_fetch_font_from_suggestion(self, font_obj):
+        """Attempt to download or extract a font from a WhatFontIs suggestion object.
+
+        Returns a local font file path (ttf/otf) if successful, or None.
+        Heuristics: look for keys containing url/zip/file/download; accept http(s) urls or base64 blobs.
+        """
+        if not isinstance(font_obj, dict):
+            return None
+
+        # Candidate keys that may contain downloadable content
+        url_keys = ['url', 'download', 'download_url', 'font_url', 'file', 'file_url', 'zip_url']
+        bin_keys = ['zip', 'filebase64', 'base64']
+
+        # 1) Try URL-based downloads
+        for k in url_keys:
+            v = font_obj.get(k)
+            if not v or not isinstance(v, str):
+                continue
+            if v.startswith('http://') or v.startswith('https://'):
+                try:
+                    r = requests.get(v, timeout=30)
+                    if r.status_code == 200:
+                        # Determine filename
+                        fname = os.path.basename(v.split('?')[0]) or f"font_{int(time.time())}.bin"
+                        save_path = os.path.join(self.fonts_dir, fname)
+                        with open(save_path, 'wb') as f:
+                            f.write(r.content)
+
+                        # If zip, try extract
+                        if fname.lower().endswith('.zip'):
+                            extracted = self.extract_font(save_path, preferred_title=(font_obj.get('title') or font_obj.get('name') or None))
+                            if extracted:
+                                return extracted
+                        # If ttf/otf, move into fonts dir (already saved) and return
+                        if fname.lower().endswith(('.ttf', '.otf')):
+                            return save_path
+                        # Otherwise, try to inspect content for zip magic
+                        if r.content[:4] == b'PK\x03\x04':
+                            # write as zip and extract
+                            zip_path = save_path if save_path.lower().endswith('.zip') else save_path + '.zip'
+                            os.rename(save_path, zip_path)
+                            extracted = self.extract_font(zip_path, preferred_title=(font_obj.get('title') or font_obj.get('name') or None))
+                            if extracted:
+                                return extracted
+                except Exception:
+                    continue
+
+        # 2) Try base64 blobs
+        for k in bin_keys:
+            v = font_obj.get(k)
+            if not v or not isinstance(v, str):
+                continue
+            try:
+                data = base64.b64decode(v)
+                # heuristics: if zip magic present
+                if data[:4] == b'PK\x03\x04':
+                    zip_name = os.path.join(self.fonts_dir, f"font_{int(time.time())}.zip")
+                    with open(zip_name, 'wb') as f:
+                        f.write(data)
+                    extracted = self.extract_font(zip_name, preferred_title=(font_obj.get('title') or font_obj.get('name') or None))
+                    if extracted:
+                        return extracted
+                # or if ttf/otf magic - try writing and returning
+                if data[:2] == b'\x00\x01' or b'trueType' in data[:200].lower() or data[:4] == b'OTTO':
+                    fname = os.path.join(self.fonts_dir, f"font_{int(time.time())}.ttf")
+                    with open(fname, 'wb') as f:
+                        f.write(data)
+                    return fname
+            except Exception:
+                continue
+
+        return None
         
     def _analyze_text_color(self, bounding_box):
-        """Analyze text and background colors using segmentation mask or clustering."""
+        """Analyze text color using clustering without GPT (used as fallback when batch analysis fails)"""
         try:
-            # Load original image
-            orig_image = Image.open(self.input_image_path).convert('RGB')
-            xs = bounding_box[0::2]
-            ys = bounding_box[1::2]
-            left, top, right, bottom = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
+            image = Image.open(self.input_image_path).convert("RGB")
 
-            # Add padding to capture more context
-            padding = 5
-            left = max(left - padding, 0)
-            top = max(top - padding, 0)
-            right = min(right + padding, orig_image.width)
-            bottom = min(bottom + padding, orig_image.height)
+            # Extract bounding box with padding for context
+            xs, ys = bounding_box[0::2], bounding_box[1::2]
+            padding = 10  # Add padding to include context
+            left = max(0, int(min(xs)) - padding)
+            top = max(0, int(min(ys)) - padding)
+            right = min(image.width, int(max(xs)) + padding)
+            bottom = min(image.height, int(max(ys)) + padding)
+            region = image.crop((left, top, right, bottom))
+
+            # Convert to numpy array and cluster
+            region_array = np.array(region)
+            text_color, bg_color = self._cluster_text_color(region_array)
+            text_brightness = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
+            bg_brightness = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
             
-            # Crop text region
-            text_crop = orig_image.crop((left, top, right, bottom))
-            text_array = np.array(text_crop)
+            # For low contrast, adjust colors to ensure readability
+            contrast_ratio = (max(text_brightness, bg_brightness) + 0.05) / (min(text_brightness, bg_brightness) + 0.05)
+            if contrast_ratio < 4.5:  # WCAG AA standard
+                self.logger.info(f"Low contrast detected ({contrast_ratio:.2f}), adjusting colors")
+                # Make text pure black or white based on background
+                if bg_brightness > 127.5:
+                    text_color = np.array([0, 0, 0])  # Black text on light background
+                else:
+                    text_color = np.array([255, 255, 255])  # White text on dark background
 
-            # Initialize default return values
-            default_result = {
-                "color": (0, 0, 0, 255),
-                "brightness": 0.0,
-                "bg_brightness": 255.0,
-                "text_rgb": [0, 0, 0],
-                "bg_rgb": [255, 255, 255]
-            }
-
-            # Check for segmentation mask
-            if hasattr(self, 'segmentation_mask_path') and os.path.exists(self.segmentation_mask_path):
-                try:
-                    mask_image = Image.open(self.segmentation_mask_path).convert('L')
-                    mask_crop = mask_image.crop((left, top, right, bottom))
-                    mask_array = np.array(mask_crop)
-
-                    # Adaptive thresholding for mask
-                    _, text_mask = cv2.threshold(mask_array, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                    text_mask = text_mask > 0
-                    bg_mask = ~text_mask
-
-                    # Extract text and background pixels
-                    text_pixels = text_array[text_mask]
-                    bg_pixels = text_array[bg_mask]
-
-                    if len(text_pixels) > 10:  # Ensure enough text pixels
-                        # Use most common RGB tuple for text color
-                        pixel_counts = Counter(map(tuple, text_pixels))
-                        text_color = np.array(pixel_counts.most_common(1)[0][0])
-                        text_brightness = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
-                    else:
-                        self.logger.warning("Insufficient text pixels, falling back to clustering")
-                        text_color, text_brightness, bg_color, bg_brightness = self._cluster_colors(text_array)
-                        if text_color is None:
-                            return default_result
-
-                    if len(bg_pixels) > 10:  # Ensure enough background pixels
-                        # Use median for background color to handle non-uniform backgrounds
-                        bg_color = np.median(bg_pixels, axis=0).astype(int)
-                        bg_brightness = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
-                    else:
-                        # Sample edges of the cropped region for background
-                        edge_pixels = np.vstack([
-                            text_array[0, :], text_array[-1, :],  # Top and bottom rows
-                            text_array[:, 0], text_array[:, -1]   # Left and right columns
-                        ])
-                        bg_color = np.median(edge_pixels, axis=0).astype(int)
-                        bg_brightness = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
-
-                    # Ensure sufficient contrast
-                    contrast_ratio = (max(text_brightness, bg_brightness) + 0.05) / (min(text_brightness, bg_brightness) + 0.05)
-                    if contrast_ratio < 4.5:
-                        self.logger.info(f"Low contrast ratio ({contrast_ratio:.2f}), adjusting text color")
-                        if text_brightness > bg_brightness:
-                            text_color = np.array([0, 0, 0])  # Darken text
-                        else:
-                            text_color = np.array([255, 255, 255])  # Lighten text
-                        text_brightness = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
-
-                    text_rgba = tuple(list(text_color) + [255])
-                    self.logger.info(f"Text analysis: RGB={text_color}, brightness={text_brightness:.2f}, bg_RGB={bg_color}, bg_brightness={bg_brightness:.2f}")
-                    
-                    return {
-                        "color": text_rgba,
-                        "brightness": float(text_brightness),
-                        "bg_brightness": float(bg_brightness),
-                        "text_rgb": text_color.tolist(),
-                        "bg_rgb": bg_color.tolist()
-                    }
-
-                except Exception as e:
-                    self.logger.error(f"Segmentation mask processing failed: {str(e)}")
-                    # Fall back to clustering
-
-            # Fallback to KMeans clustering if mask is unavailable or fails
-            self.logger.info("No valid segmentation mask, using KMeans clustering")
-            text_color, text_brightness, bg_color, bg_brightness = self._cluster_colors(text_array)
-            if text_color is None:
-                return default_result
-
-            text_rgba = tuple(list(text_color) + [255])
-            return {
-                "color": text_rgba,
-                "brightness": float(text_brightness),
-                "bg_brightness": float(bg_brightness),
-                "text_rgb": text_color.tolist(),
-                "bg_rgb": bg_color.tolist()
-            }
-
-        except Exception as e:
-            self.logger.error(f"Text color analysis failed: {str(e)}")
-            return default_result
-
-    def _cluster_colors(self, image_array):
-        """Use KMeans clustering to separate text and background colors."""
-        try:
-            h, w, _ = image_array.shape
-            reshaped = image_array.reshape(-1, 3)
-            kmeans = KMeans(n_clusters=2, random_state=0).fit(reshaped)
-            labels = kmeans.labels_
-            centers = kmeans.cluster_centers_.astype(int)
-
-            # Assume text is the cluster with fewer pixels
-            cluster_0_count = np.sum(labels == 0)
-            cluster_1_count = np.sum(labels == 1)
-            text_cluster_idx = 0 if cluster_0_count < cluster_1_count else 1
-            bg_cluster_idx = 1 - text_cluster_idx
-
-            text_color = centers[text_cluster_idx]
-            bg_color = centers[bg_cluster_idx]
-
+            # Calculate brightness
             text_brightness = 0.299 * text_color[0] + 0.587 * text_color[1] + 0.114 * text_color[2]
             bg_brightness = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]
 
-            return text_color, text_brightness, bg_color, bg_brightness
+            return {
+                "color": tuple(list(text_color) + [255]),
+                "brightness": float(text_brightness),
+                "bg_brightness": float(bg_brightness),
+                "text_rgb": text_color.tolist(),
+                "bg_rgb": bg_color.tolist(),
+            }
+
         except Exception as e:
-            self.logger.error(f"KMeans clustering failed: {str(e)}")
-            return None, None, None, None
-    def download_font(self, font_title):
-        """Download font from ffonts.net"""
+            self.logger.error(f"Text color analysis failed (falling back to black text): {e}")
+            return {
+                "color": (0, 0, 0, 255),
+                "brightness": 0,
+                "bg_brightness": 255,
+                "text_rgb": [0, 0, 0],
+                "bg_rgb": [255, 255, 255],
+            }
+
+    def _extract_json_from_text(self, text):
+        """Attempt to extract valid JSON from a possibly noisy GPT output.
+
+        Strategies:
+        - Strip surrounding code fences (```json ... ``` or ``` ... ```)
+        - Find the first '{' and last '}' and attempt to parse progressively smaller substrings
+        - Replace single backslashes that commonly break JSON when GPT emits Windows paths
+        """
+        # quick guard
+        if not text or not isinstance(text, str):
+            return None
+
+        s = text.strip()
+        # Strip code fences
+        if s.startswith('```'):
+            try:
+                # Remove leading fence and trailing fence
+                s = s.split('```', 2)[1]
+                # If starts with json label, remove it
+                if s.strip().lower().startswith('json'):
+                    s = s.strip()[4:].strip()
+            except Exception:
+                pass
+
+        # Fix common escaping: replace backslashes in Windows-style paths with forward slashes
+        s = s.replace('\\', '/')
+
+        # Find the first JSON-like object or array in the text
+        first_obj = s.find('{')
+        first_arr = s.find('[')
+        start = -1
+        if first_obj != -1 and (first_arr == -1 or first_obj < first_arr):
+            start = first_obj
+            open_char, close_char = '{', '}'
+        elif first_arr != -1:
+            start = first_arr
+            open_char, close_char = '[', ']'
+        else:
+            # No obvious JSON; try parse entire string
+            try:
+                return json.loads(s)
+            except Exception:
+                self.logger.error('Failed to locate JSON in GPT response')
+                return None
+
+        # Try progressively trimming trailing content until JSON parses or we fail
+        for end in range(len(s), start, -1):
+            if s[end-1] != close_char:
+                continue
+            candidate = s[start:end]
+            try:
+                return json.loads(candidate)
+            except Exception:
+                continue
+
+        # As a last resort, try to repair some common problems and parse
+        candidate = s[start:]
+        # Attempt naive balancing of braces/brackets by counting
+        if open_char == '{':
+            open_count = candidate.count('{')
+            close_count = candidate.count('}')
+            if close_count < open_count:
+                # append missing braces
+                candidate = candidate + ('}' * (open_count - close_count))
+        else:
+            open_count = candidate.count('[')
+            close_count = candidate.count(']')
+            if close_count < open_count:
+                candidate = candidate + (']' * (open_count - close_count))
+
+        try:
+            return json.loads(candidate)
+        except Exception as e:
+            self.logger.error(f"Final JSON extraction attempt failed: {e}")
+            return None
+
+
+    def _cluster_text_color(self, region):
+        """Cluster pixels to identify text vs background."""
+        pixels = region.reshape(-1, 3).astype(float)
+        if len(pixels) > 10000:  # downsample for speed
+            idx = np.random.choice(len(pixels), 10000, replace=False)
+            pixels = pixels[idx]
+
+        kmeans = KMeans(n_clusters=2, n_init=5, random_state=0)
+        kmeans.fit(pixels)
+        centers = kmeans.cluster_centers_
+        labels = kmeans.labels_
+        counts = np.bincount(labels)
+
+        # Pick the smaller cluster as text (assumes text is minority)
+        if counts[0] < counts[1]:
+            text_cluster, bg_cluster = 0, 1
+        else:
+            text_cluster, bg_cluster = 1, 0
+
+        text_color = centers[text_cluster]
+        bg_color = centers[bg_cluster]
+
+        # DO NOT INVERT HERE - return actual detected colors
+        return text_color, bg_color
+
+    def find_local_font(self, font_title):
+        """Find a font in the local fonts directory using fuzzy matching"""
+        if not font_title:
+            return None
+            
         if font_title in self.font_cache:
+            self.logger.info(f"Using cached font: {font_title} -> {self.font_cache[font_title]}")
             return self.font_cache[font_title]
             
         try:
-            safe_title = "".join(c for c in font_title.replace(' ', '-') 
-                               if c.isalnum() or c in ('-', '_')).rstrip()
+            # Break down font title into components for better matching
+            font_terms = font_title.lower().split()
+            base_font_name = font_terms[0] if font_terms else ""
+            weight_hints = {'bold', 'light', 'medium', 'heavy', 'black', 'thin', 'regular', 'semibold', 'italic'}
+            style_terms = {term for term in font_terms if term in weight_hints}
             
-            download_url = f"https://www.ffonts.net/{safe_title}.font.zip"
-            response = requests.get(download_url, timeout=30)
+            # First try exact matches
+            for file in os.listdir(self.fonts_dir):
+                if not file.lower().endswith(('.ttf', '.otf')):
+                    continue
+                    
+                file_name = os.path.splitext(file)[0].lower()
+                if font_title.lower() in file_name:
+                    font_path = os.path.join(self.fonts_dir, file)
+                    try:
+                        ImageFont.truetype(font_path, 12)
+                        self.logger.info(f"Found exact matching font: {file}")
+                        self.font_cache[font_title] = font_path
+                        return font_path
+                    except Exception:
+                        continue
             
-            if not response.content.startswith(b'PK'):
-                return None
+            # Then try partial matches
+            best_match = None
+            best_match_score = 0
+            
+            for file in os.listdir(self.fonts_dir):
+                if not file.lower().endswith(('.ttf', '.otf')):
+                    continue
+                    
+                file_name = os.path.splitext(file)[0].lower()
+                file_terms = set(file_name.split())
                 
+                # Calculate match score
+                score = 0
+                if base_font_name in file_name:
+                    score += 3  # High priority for base font name match
+                score += len(style_terms & file_terms)  # Add points for matching style terms
+                
+                if score > best_match_score:
+                    font_path = os.path.join(self.fonts_dir, file)
+                    try:
+                        ImageFont.truetype(font_path, 12)
+                        best_match = font_path
+                        best_match_score = score
+                    except Exception:
+                        continue
+            
+            if best_match:
+                self.logger.info(f"Found best matching font: {os.path.basename(best_match)} (score: {best_match_score})")
+                self.font_cache[font_title] = best_match
+                return best_match
+                            
+            self.logger.warning(f"No matching local font found for: {font_title}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error searching for local font {font_title}: {e}")
+            return None
+
+    def find_local_font_exact(self, font_title):
+        """Return exact/local substring match for a font title in the local fonts directory.
+
+        This is stricter than find_local_font: it tries to find a filename that
+        contains the suggestion title as a contiguous substring (case-insensitive).
+        """
+        if not font_title:
+            return None
+
+        try:
+            target = font_title.lower()
+            for file in os.listdir(self.fonts_dir):
+                if not file.lower().endswith(('.ttf', '.otf')):
+                    continue
+                file_name = os.path.splitext(file)[0].lower()
+                if target in file_name:
+                    path = os.path.join(self.fonts_dir, file)
+                    try:
+                        ImageFont.truetype(path, 12)
+                        return path
+                    except Exception:
+                        continue
+            return None
+        except Exception as e:
+            self.logger.error(f"Error during exact local font lookup for '{font_title}': {e}")
+            return None
+
+    def download_font(self, font_title):
+        """Download font from ffonts.net by inferred safe title and extract it.
+
+        Returns the path to the extracted font file if successful, or None.
+        Uses a simple cache to avoid repeated downloads during a run.
+        """
+        if not font_title:
+            return None
+
+        if font_title in self.font_cache:
+            return self.font_cache[font_title]
+
+        try:
+            # sanitize title into a safe ffonts.net slug
+            safe_title = "".join(c for c in font_title.replace(' ', '-') 
+                                   if c.isalnum() or c in ('-', '_')).rstrip()
+
+            download_url = f"https://www.ffonts.net/{safe_title}.font.zip"
+            self.logger.info(f"Attempting to download font from ffonts.net: {download_url}")
+            response = requests.get(download_url, timeout=30)
+
+            # Basic check for zip magic
+            if not response.content or not response.content.startswith(b'PK'):
+                self.logger.info(f"ffonts.net did not return a zip for '{font_title}' (url: {download_url})")
+                return None
+
             zip_path = os.path.join(self.fonts_dir, f"{safe_title}.zip")
             with open(zip_path, 'wb') as f:
                 f.write(response.content)
-                
-            font_path = self.extract_font(zip_path)
-            os.remove(zip_path)
-            
+
+            font_path = self.extract_font(zip_path, preferred_title=font_title)
+            try:
+                os.remove(zip_path)
+            except Exception:
+                pass
+
             if font_path:
+                self.logger.info(f"Successfully downloaded and extracted font '{font_title}' -> {font_path}")
                 self.font_cache[font_title] = font_path
-                
-            return font_path
-            
+                return font_path
+            else:
+                self.logger.info(f"No font files found inside downloaded zip for '{font_title}'")
+                return None
+
         except Exception as e:
-            self.logger.error(f"Font download error: {e}")
+            self.logger.error(f"Font download error for '{font_title}': {e}")
             return None
 
-    def extract_font(self, zip_path):
-        """Extract font from zip file"""
+    def extract_font(self, zip_path, preferred_title=None):
+        """Extract font from zip file.
+
+        Heuristics:
+        - Prefer filenames that match common weight names (regular, medium, bold, semibold)
+        - Avoid decorative variants (outline, shadow, stencil, demo, trial)
+        - If preferred_title is provided, boost files that contain parts of that title
+        """
         try:
             with zipfile.ZipFile(zip_path) as zip_ref:
-                font_files = [f for f in zip_ref.namelist() 
-                            if f.lower().endswith(('.ttf', '.otf'))]
-                
+                font_files = [f for f in zip_ref.namelist()
+                              if f.lower().endswith(('.ttf', '.otf'))]
+
                 if not font_files:
                     return None
-                    
-                font_file = font_files[0]
-                zip_ref.extract(font_file, self.fonts_dir)
-                return os.path.join(self.fonts_dir, font_file)
-                
+
+                # Ranking heuristic
+                def score_name(name: str) -> int:
+                    n = name.lower()
+                    score = 0
+                    # prefer common weights; these are baseline boosts
+                    # Note: biasing toward bold/black/extra-bold by default when no preferred_title
+                    if any(k in n for k in ['regular', 'roman', 'normal', 'book']):
+                        score += 30
+                    if any(k in n for k in ['medium', 'med']):
+                        score += 15
+                    # semibold is less preferred than true bold/black
+                    if any(k in n for k in ['semibold', 'semi-bold', 'semib']):
+                        score += 10
+                    # strong boost for bold-like weights
+                    if any(k in n for k in ['black', 'extra-bold', 'extrabold', 'heavy']):
+                        score += 120
+                        if not preferred_title:
+                            # extra bias when user didn't request a specific title
+                            score += 60
+                    elif 'bold' in n:
+                        # generic 'bold' (catch other bold variants) gets a strong boost too
+                        score += 80
+                        if not preferred_title:
+                            score += 40
+                    # penalize decorative/outline/demo/trial variants
+                    if any(k in n for k in ['outline', 'shadow', 'stencil', 'stamp', 'demo', 'trial', 'oblique', 'inline']):
+                        score -= 50
+                    # prefer ttf slightly over otf (arbitrary)
+                    if n.endswith('.ttf'):
+                        score += 2
+                    # boost if parts of the preferred title are present
+                    if preferred_title:
+                        for part in preferred_title.lower().replace('-', ' ').split():
+                            if part and part in n:
+                                score += 10
+                    return score
+
+                # Score all candidates and log them for transparency
+                scored = [(f, score_name(f)) for f in font_files]
+                scored.sort(key=lambda x: x[1], reverse=True)
+
+                # Log all candidates and scores (useful for debugging selection)
+                try:
+                    self.logger.info("Font candidates inside zip (name -> score):\n" + "\n".join([f"  {s[0]} -> {s[1]}" for s in scored]))
+                except Exception:
+                    pass
+
+                best_file, best_score = scored[0]
+                # If best_file isn't the first listed in the archive, log that too
+                if best_file != font_files[0]:
+                    self.logger.info(f"Chose best font in zip: '{best_file}' (score={best_score}) over first: '{font_files[0]}'")
+
+                # Ensure extraction path exists
+                extract_dir = self.fonts_dir
+                zip_ref.extract(best_file, extract_dir)
+                extracted_path = os.path.join(extract_dir, best_file)
+                # Normalize path separators for Windows
+                extracted_path = os.path.normpath(extracted_path)
+                return extracted_path
+
         except Exception as e:
             self.logger.error(f"Font extraction error: {e}")
             return None
@@ -769,13 +1392,18 @@ class ImageTranslator:
         self.logger.info(f"Starting translation to {self.target_language}")
         client = OpenAI()
         
-        prompt = (f"Translate the following English text entries to {self.target_language}. "
-                 f"Keep the exact same JSON structure for each entry, but add the translation "
-                 f"under translations.{self.target_language}. For example, if the input is "
-                 f"{{'id': 'line_1', 'original': 'Hello', 'translations': {{}}}}, "
-                 f"output should be {{'id': 'line_1', 'original': 'Hello', 'translations': {{'{self.target_language}': 'TRANSLATION'}}}}. "
-                 f"Make sure to translate to {self.target_language} and maintain any formatting or special characters. "
-                 f"Return only valid JSON.\n\n")
+        prompt = (
+            f"Translate the following English text entries to {self.target_language}. "
+            "Keep the exact same JSON structure for each entry, but add the translation "
+            f"under translations.{self.target_language}.\n\n"
+            "IMPORTANT: Preserve the ORIGINAL CAPITALIZATION PATTERN of each entry. "
+            "Match the casing style of the original when producing the translation: "
+            "e.g. 'HELLO' -> 'AUREVOIR' (all-caps), 'Hello' -> 'Au revoir' (capitalized), "
+            "'hello' -> 'au revoir' (lowercase), 'Hello World' -> 'Au revoir Monde' (Title Case). "
+            "If the original uses mixed-case per-word, apply the same per-word casing pattern to each translated word. "
+            "Preserve punctuation and special characters; only translate the words themselves. "
+            f"Return only valid JSON with the same array structure as the input.\n\n"
+        )
         prompt += json.dumps(text_data["texts"])
         
         response = client.chat.completions.create(
@@ -786,27 +1414,161 @@ class ImageTranslator:
             ],
             temperature=0
         )
-        
+
         content = response.choices[0].message.content.strip()
         self.logger.info(f"Raw GPT response: {content}")
-        if content.startswith("```"):
-            content = content.split("```", 2)[1]
-            if content.startswith("json"):
-                content = content[4:].strip()
-        
-        self.logger.info(f"Processed content: {content}")        
-        translated_texts = json.loads(content)
-        self.logger.info(f"Parsed translations: {json.dumps(translated_texts, indent=2)}")
-        
-        # Update original data with translations
-        for i, entry in enumerate(text_data["texts"]):
-            translation = translated_texts[i].get("translations", {}).get(self.target_language)
-            if translation:
-                entry["translations"][self.target_language] = translation
-                self.logger.info(f"Added {self.target_language} translation for '{entry['original']}': '{translation}'")
-            else:
-                self.logger.warning(f"No translation structure found for text: {entry['original']}")
-                
+
+        # Try bulk parse first
+        parsed = self._extract_json_from_text(content)
+        if parsed is None or not isinstance(parsed, list) or len(parsed) != len(text_data.get("texts", [])):
+            # Bulk parse failed or returned unexpected shape — attempt batched fallback translations
+            # NOTE: We avoid per-line calls to reduce cost. The batched fallback will request translations
+            # in groups and will ONLY accept results that include the exact language name as the key
+            # (e.g. 'german'). Do NOT accept ISO codes like 'de'. If a batch fails to return the exact
+            # key, we will fallback to using the original text as the translation for that batch.
+            self.logger.warning("Bulk translation JSON parse failed or mismatched size; attempting batched fallback (no per-line calls)")
+            texts = text_data.get("texts", [])
+            batch_size = 12
+            parsed = []
+
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i:i+batch_size]
+                originals = [entry.get('original', '') for entry in batch]
+
+                batch_prompt = (
+                    f"Translate the following list of English text entries to {self.target_language}.\n"
+                    "Return ONLY valid JSON: an array of objects, each object corresponding to the input order.\n"
+                    "Each object MUST contain a 'translations' object with a single key that is EXACTLY the target language NAME (not an ISO code).\n"
+                    f"Each object MUST use the key '{self.target_language}' inside 'translations' (do NOT use 'de' or any ISO code).\n"
+                    "DO NOT include any prose, headers, or a line like 'Target language: ...' before the JSON array.\n"
+                    "Preserve the ORIGINAL CAPITALIZATION PATTERN of each entry (keep all-caps, title-case, lowercase, etc.).\n\n"
+                    "Input array (same order should be preserved):\n"
+                )
+                batch_prompt += json.dumps(originals, ensure_ascii=False)
+
+                try:
+                    batch_resp = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": f"You are a helpful translator that outputs JSON arrays matching the input order. The target language is '{self.target_language}'. Only output the JSON array and nothing else."},
+                            {"role": "user", "content": batch_prompt}
+                        ],
+                        temperature=0
+                    )
+                    batch_content = batch_resp.choices[0].message.content.strip()
+                    self.logger.info(f"Raw batch response (items={len(batch)}): {batch_content[:1000]}")
+                    batch_parsed = self._extract_json_from_text(batch_content)
+
+                    # Validate parsed shape: must be a list with same length and each item must include
+                    # translations.<exact language name>
+                    valid = True
+                    if not isinstance(batch_parsed, list) or len(batch_parsed) != len(batch):
+                        valid = False
+                    else:
+                        for obj in batch_parsed:
+                            if not isinstance(obj, dict):
+                                valid = False
+                                break
+                            translations = obj.get('translations')
+                            if not isinstance(translations, dict) or self.target_language not in translations:
+                                valid = False
+                                break
+
+                    if valid:
+                        parsed.extend(batch_parsed)
+                    else:
+                        # Try one recovery attempt with a stricter prompt asking for ONLY the JSON array and nothing else.
+                        self.logger.warning(f"Batch translation did not return required exact-key translations for target '{self.target_language}'. Attempting one strict retry before falling back.")
+                        strict_prompt = (
+                            "RETURN ONLY a JSON array (no prose, no comments, no headers). Each array item must correspond to the input order.\n"
+                            f"Each item MUST be an object containing 'translations' with a single key EXACTLY named '{self.target_language}'.\n"
+                            "Do NOT print the target language name or any extra text outside the JSON array.\n\n"
+                        )
+                        strict_prompt += json.dumps(originals, ensure_ascii=False)
+                        try:
+                            retry_resp = client.chat.completions.create(
+                                model="gpt-4",
+                                messages=[
+                                    {"role": "system", "content": f"You are a JSON-only translator. The target language is '{self.target_language}'. Output strictly valid JSON arrays matching the input order and do not print any prose or headers."},
+                                    {"role": "user", "content": strict_prompt}
+                                ],
+                                temperature=0
+                            )
+                            retry_content = retry_resp.choices[0].message.content.strip()
+                            self.logger.info(f"Raw strict-retry batch response: {retry_content[:1000]}")
+                            retry_parsed = self._extract_json_from_text(retry_content)
+
+                            # Re-validate retry result
+                            retry_valid = True
+                            if not isinstance(retry_parsed, list) or len(retry_parsed) != len(batch):
+                                retry_valid = False
+                            else:
+                                for obj in retry_parsed:
+                                    if not isinstance(obj, dict):
+                                        retry_valid = False
+                                        break
+                                    translations = obj.get('translations')
+                                    if not isinstance(translations, dict) or self.target_language not in translations:
+                                        retry_valid = False
+                                        break
+
+                            if retry_valid:
+                                parsed.extend(retry_parsed)
+                            else:
+                                self.logger.warning(f"Strict retry still did not return required key '{self.target_language}'. Falling back to original text for this batch.")
+                                for src in originals:
+                                    parsed.append({"translations": {self.target_language: src}})
+                        except Exception as e:
+                            self.logger.error(f"Strict retry failed for items {i}-{i+len(batch)-1}: {e}")
+                            for src in originals:
+                                parsed.append({"translations": {self.target_language: src}})
+
+                except Exception as e:
+                    self.logger.error(f"Batched translation request failed for items {i}-{i+len(batch)-1}: {e}")
+                    for src in originals:
+                        parsed.append({"translations": {self.target_language: src}})
+
+        # At this point `parsed` should be a list of translation-like objects matching the input length
+        try:
+            self.logger.info(f"Parsed translations (count={len(parsed)}): {json.dumps(parsed if isinstance(parsed, list) else parsed, indent=2)[:2000]}")
+        except Exception:
+            pass
+
+        # Update original data with translations where available
+        for i, entry in enumerate(text_data.get("texts", [])):
+            try:
+                trans_obj = parsed[i]
+                if not isinstance(trans_obj, dict):
+                    continue
+                translation = None
+                # The per-entry results may be nested; try a couple of keys
+                if "translations" in trans_obj and isinstance(trans_obj["translations"], dict):
+                    # Try exact language key
+                    translation = trans_obj["translations"].get(self.target_language)
+                    # Try alias (ISO) if model returned short code like 'de'
+                    if translation is None:
+                        iso = self.lang_aliases.get(self.target_language)
+                        if iso:
+                            translation = trans_obj["translations"].get(iso)
+                    # If still None, take any translation value present in the dict
+                    if translation is None:
+                        try:
+                            # take first value in the translations mapping
+                            translation = next(iter(trans_obj["translations"].values()))
+                        except Exception:
+                            translation = None
+                if translation is None and self.target_language in trans_obj:
+                    translation = trans_obj.get(self.target_language)
+                if translation:
+                    entry["translations"][self.target_language] = translation
+                    self.logger.info(f"Added {self.target_language} translation for '{entry['original']}': '{translation}'")
+                else:
+                    self.logger.warning(f"No translation structure found for text: {entry['original']}")
+            except IndexError:
+                self.logger.error(f"No parsed translation available for index {i}; skipping")
+            except Exception as e:
+                self.logger.error(f"Error applying translation for '{entry.get('original', '')}': {e}")
+
         return text_data
 
     def perform_inpainting(self, mask_path):
@@ -866,7 +1628,10 @@ class ImageTranslator:
             
             # Use the stored text color from font info
             text_color = entry.get('font_info', {}).get('text_color', (0,0,0,255))
-            self.logger.info(f"Using stored text color {text_color} for text: {translated_text}")
+            used_gpt_color = entry.get('font_info', {}).get('used_gpt_color', False)
+            gpt_text_rgb = entry.get('font_info', {}).get('gpt_text_rgb')
+            gpt_bg_rgb = entry.get('font_info', {}).get('gpt_bg_rgb')
+            self.logger.info(f"Using stored text color {text_color} for text: {translated_text} (used_gpt_color={used_gpt_color}, gpt_text_rgb={gpt_text_rgb}, gpt_bg_rgb={gpt_bg_rgb})")
             
             # Load and scale font
             font_size = int(box_height * 0.8)
@@ -874,25 +1639,34 @@ class ImageTranslator:
             
             font_info = entry.get('font_info', {})
             custom_font_path = font_info.get('font_path')
-            self.logger.info(f"Attempting to load font: {custom_font_path}")
+            self.logger.info(f"Font info: {font_info}")
             
-            if custom_font_path and os.path.exists(custom_font_path):
-                try:
-                    font = ImageFont.truetype(custom_font_path, font_size)
-                    self.logger.info(f"Successfully loaded custom font: {custom_font_path}")
-                except Exception as e:
-                    self.logger.error(f"Failed to load custom font: {str(e)}")
-                    font = None
+            if custom_font_path:
+                if os.path.exists(custom_font_path):
+                    try:
+                        font = ImageFont.truetype(custom_font_path, font_size)
+                        self.logger.info(f"Successfully loaded custom font: {custom_font_path}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to load custom font '{custom_font_path}': {str(e)}")
+                        font = None
+                else:
+                    self.logger.error(f"Custom font path does not exist: {custom_font_path}")
+            else:
+                self.logger.warning("No custom font path provided in font_info")
                     
             if font is None:
                 self.logger.info("Trying fallback fonts")
+                fallback_tried = []
                 for fallback in self.fallback_fonts:
                     try:
                         font = ImageFont.truetype(fallback, font_size)
-                        self.logger.info(f"Successfully loaded fallback font: {fallback}")
+                        self.logger.warning(f"Using fallback font: {fallback}")
                         break
-                    except:
+                    except Exception as e:
+                        fallback_tried.append(f"{fallback} ({str(e)})")
                         continue
+                if font is None:
+                    self.logger.error(f"All fallback fonts failed: {'; '.join(fallback_tried)}")
                         
             if font is None:
                 self.logger.warning("Using default font as last resort")
@@ -947,7 +1721,7 @@ class ImageTranslator:
 
 if __name__ == "__main__":
     # Just modify these two lines to change the image and language
-    image_path = "test-images/test5.PNG"
+    image_path = "test-images/test1.PNG"
     target_language = "german"
     
     translator = ImageTranslator(image_path, target_language)
