@@ -105,6 +105,24 @@ class ImageTranslator:
         self.padding = 3
         self.blur_radius = 2
         self.confidence_threshold = 0.83  # Text with confidence below 50% will be ignored
+        # Segmentation mask dilation (pixels) - makes Lang-SAM mask thicker
+        # Increase default to 7 for stronger dilation; override with SEGMENT_MASK_DILATE env var
+        self.seg_dilate = int(os.getenv('SEGMENT_MASK_DILATE', '20'))
+        # Expansion strategy: 'dt' = distance-transform based expansion (smooth),
+        # 'morph' = morphological dilation/closing (fast but blocky for very large kernels)
+        self.seg_expand_mode = os.getenv('SEGMENT_MASK_EXPAND_MODE', 'dt').lower()
+        # Kernel size used for morphological closing/smoothing (odd integer)
+        try:
+            self.seg_close_kernel = int(os.getenv('SEGMENT_MASK_CLOSE_KERNEL', '7'))
+        except Exception:
+            self.seg_close_kernel = 7
+        # Number of morphological iterations for smoothing (post-expansion)
+        try:
+            self.seg_morph_iterations = int(os.getenv('SEGMENT_MASK_MORPH_ITERS', '1'))
+        except Exception:
+            self.seg_morph_iterations = 1
+        # Enable debug dumps for masks (saves seg/ocr/expanded/combined masks)
+        self.seg_debug = bool(int(os.getenv('SEGMENT_MASK_DEBUG', '1')))
         
         # Fallback fonts
         self.fallback_fonts = [
@@ -276,52 +294,161 @@ class ImageTranslator:
     def create_mask(self, text_data, logo_boxes):
         """Create mask for inpainting"""
         self.logger.info("Creating mask for inpainting")
-        
         image = Image.open(self.input_image_path)
-        mask = Image.new("L", image.size, 0)
-        draw = ImageDraw.Draw(mask)
-        
+
         def overlaps_logo(box, logos):
             x1, y1, x2, y2 = box
             for lx1, ly1, lx2, ly2 in logos:
                 if not (x2 < lx1 or x1 > lx2 or y2 < ly1 or y1 > ly2):
                     return True
             return False
-            
+
+        # Attempt to use the segmentation mask (pixel-precise) if available
+        seg_path = getattr(self, 'segmentation_mask_path', None)
+        seg_mask = None
+        if seg_path and os.path.exists(seg_path):
+            try:
+                seg_mask = Image.open(seg_path).convert('L')
+                # Resize segmentation mask to match image if sizes differ
+                if seg_mask.size != image.size:
+                    self.logger.info(f"Resizing segmentation mask {seg_mask.size} to image size {image.size}")
+                    seg_mask = seg_mask.resize(image.size, resample=Image.NEAREST)
+                # Threshold to binary
+                seg_arr = np.array(seg_mask)
+                # Optionally dilate the segmentation to make it thicker
+                try:
+                    dilate_px = int(getattr(self, 'seg_dilate', 0))
+                    if dilate_px > 0:
+                            # Apply initial morphological dilation for small kernels
+                            if self.seg_expand_mode == 'morph' or dilate_px <= 9:
+                                kernel = np.ones((dilate_px, dilate_px), np.uint8)
+                                seg_arr = cv2.dilate(seg_arr, kernel, iterations=max(1, self.seg_morph_iterations))
+                                self.logger.info(f"Applied morphological dilation of {dilate_px}px to segmentation mask (mode=morph or small kernel)")
+                            else:
+                                # Distance-transform based smooth expansion: compute distance to background
+                                try:
+                                    # Normalize to binary 0/1
+                                    bin_mask = (seg_arr > 127).astype(np.uint8)
+                                    # Compute distance transform on inverted mask (distance to nearest foreground)
+                                    dt = cv2.distanceTransform((bin_mask == 0).astype(np.uint8), cv2.DIST_L2, 5)
+                                    # Create expanded mask where distance < dilate_px
+                                    expanded = (dt <= float(dilate_px)).astype(np.uint8) * 255
+                                    seg_arr = np.where(expanded > 0, 255, seg_arr).astype(np.uint8)
+                                    self.logger.info(f"Applied distance-transform expansion of ~{dilate_px}px to segmentation mask (mode=dt)")
+                                except Exception as e:
+                                    # Fallback to simple dilation if dt fails
+                                    kernel = np.ones((dilate_px, dilate_px), np.uint8)
+                                    seg_arr = cv2.dilate(seg_arr, kernel, iterations=1)
+                                    self.logger.warning(f"Distance-transform expansion failed ({e}), fell back to morphological dilation of {dilate_px}px")
+                except Exception as e:
+                    self.logger.debug(f"Segmentation dilation failed: {e}")
+
+                seg_bin = np.where(seg_arr > 127, 255, 0).astype(np.uint8)
+                seg_mask = Image.fromarray(seg_bin)
+                self.logger.info(f"Loaded and prepared segmentation mask from {seg_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to load segmentation mask at {seg_path}: {e}")
+                seg_mask = None
+
+        # Build an OCR-box mask (only include high-confidence, non-logo boxes)
+        ocr_mask = Image.new('L', image.size, 0)
+        draw = ImageDraw.Draw(ocr_mask)
         for line in text_data:
-            text_content = line.get("text", "")
-            
-            # Check confidence of each word
-            word_confidences = [w.get("confidence", 0) for w in line.get("words", [])]
+            text_content = line.get('text', '')
+            word_confidences = [w.get('confidence', 0) for w in line.get('words', [])]
             if not word_confidences:
-                self.logger.warning(f"Skipping text '{text_content}' - no confidence data")
+                self.logger.debug(f"Skipping OCR box for '{text_content}' - no word confidences")
                 continue
-                
             avg_confidence = sum(word_confidences)/len(word_confidences)
             if avg_confidence < self.confidence_threshold:
-                self.logger.warning(f"Skipping text '{text_content}' - low confidence ({avg_confidence:.2f})")
+                self.logger.debug(f"Skipping OCR box for '{text_content}' - low confidence ({avg_confidence:.2f})")
                 continue
-                
-            box = line["boundingBox"]
+
+            box = line.get('boundingBox')
+            if not box or len(box) < 4:
+                continue
             xs = box[0::2]
             ys = box[1::2]
-            
-            left = max(min(xs) - self.padding, 0)
-            top = max(min(ys) - self.padding, 0)
-            right = min(max(xs) + self.padding, image.width)
-            bottom = min(max(ys) + self.padding, image.height)
-            
+            left = max(int(min(xs)) - self.padding, 0)
+            top = max(int(min(ys)) - self.padding, 0)
+            right = min(int(max(xs)) + self.padding, image.width)
+            bottom = min(int(max(ys)) + self.padding, image.height)
+
             if overlaps_logo((left, top, right, bottom), logo_boxes):
-                self.logger.warning(f"Skipping text '{text_content}' - overlaps with logo")
+                self.logger.debug(f"Skipping OCR box for '{text_content}' - overlaps with logo")
                 continue
-                
-            self.logger.info(f"Adding to mask: '{text_content}' at {left},{top},{right},{bottom}")
+
             draw.rectangle([left, top, right, bottom], fill=255)
-                
-        mask = mask.filter(ImageFilter.GaussianBlur(self.blur_radius))
-        mask.save(self.mask_path)
-        self.logger.info(f"Mask saved to {self.mask_path}")
-        return self.mask_path
+
+        # If we have a segmentation mask, intersect it with the OCR-box mask so we only
+        # inpaint pixel areas that both the segmentation model and OCR agree are text.
+        if seg_mask is not None:
+            try:
+                seg_arr = np.array(seg_mask)
+                ocr_arr = np.array(ocr_mask)
+
+                # Optionally apply a morphological closing to smooth small holes
+                try:
+                    if self.seg_close_kernel and self.seg_close_kernel > 1:
+                        k = self.seg_close_kernel if self.seg_close_kernel % 2 == 1 else self.seg_close_kernel + 1
+                        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+                        seg_arr = cv2.morphologyEx(seg_arr, cv2.MORPH_CLOSE, kernel, iterations=max(1, self.seg_morph_iterations))
+                        self.logger.info(f"Applied morphological closing with kernel {k} to segmentation mask")
+                except Exception as e:
+                    self.logger.debug(f"Segmentation morphological closing failed: {e}")
+
+                # Build combined mask (intersection between seg and ocr)
+                combined = np.where((seg_arr > 0) & (ocr_arr > 0), 255, 0).astype(np.uint8)
+
+                # If the combined mask still has very small islands, perform a small closing
+                try:
+                    small_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, small_kernel, iterations=1)
+                except Exception:
+                    pass
+
+                mask = Image.fromarray(combined)
+                self.logger.info(f"Using intersection of segmentation mask and OCR boxes for inpainting mask")
+
+                # Save debug masks if enabled
+                if getattr(self, 'seg_debug', False):
+                    try:
+                        debug_dir = os.path.join(self.process_dir, 'debug_masks')
+                        os.makedirs(debug_dir, exist_ok=True)
+                        Image.fromarray(seg_arr).save(os.path.join(debug_dir, 'seg_expanded.png'))
+                        ocr_mask.save(os.path.join(debug_dir, 'ocr_mask.png'))
+                        Image.fromarray(combined).save(os.path.join(debug_dir, 'combined_mask.png'))
+                        self.logger.info(f"Wrote debug masks to {debug_dir}")
+                    except Exception as e:
+                        self.logger.debug(f"Failed to write debug masks: {e}")
+
+            except Exception as e:
+                self.logger.warning(f"Failed to combine segmentation mask with OCR boxes: {e}; falling back to OCR boxes only")
+                mask = ocr_mask
+        else:
+            # No segmentation mask available; use OCR-box mask as before
+            mask = ocr_mask
+
+        # Ensure logos are not masked (subtract logos from the mask)
+        if logo_boxes:
+            try:
+                logo_draw = ImageDraw.Draw(mask)
+                for lx1, ly1, lx2, ly2 in logo_boxes:
+                    # draw black rectangles over logo areas to remove them from the mask
+                    logo_draw.rectangle([lx1, ly1, lx2, ly2], fill=0)
+                self.logger.info(f"Removed {len(logo_boxes)} logo regions from mask")
+            except Exception as e:
+                self.logger.debug(f"Failed to subtract logos from mask: {e}")
+
+        # Smooth the mask for inpainting (keep same parameter as before)
+        try:
+            mask = mask.filter(ImageFilter.GaussianBlur(self.blur_radius))
+            mask.save(self.mask_path)
+            self.logger.info(f"Mask saved to {self.mask_path}")
+            return self.mask_path
+        except Exception as e:
+            self.logger.error(f"Failed to save inpainting mask: {e}")
+            return None
 
     def _clear_directory(self, directory):
         """Clear all files in the specified directory"""
@@ -1323,10 +1450,59 @@ class ImageTranslator:
                 if not font_files:
                     return None
 
+                # If a preferred_title is provided, attempt a deterministic filter first:
+                # - split preferred_title into family parts and weight tokens
+                # - prefer files that contain all family parts and the preferred weight token
+                if preferred_title:
+                    pref_lower = preferred_title.lower().replace('-', ' ')
+                    weight_tokens = ['black', 'extrabold', 'extra', 'extra bold', 'bold', 'semibold', 'semi', 'semi bold', 'medium', 'regular', 'light', 'thin', 'heavy']
+                    parts = [p for p in pref_lower.split() if p.strip()]
+                    family_parts = [p for p in parts if p not in weight_tokens]
+                    pref_weights = [w for w in weight_tokens if w.replace(' ', '') in pref_lower.replace(' ', '') or w in pref_lower]
+
+                    # helper to test candidate text
+                    def candidate_matches_family_and_weight(candidate_name: str) -> bool:
+                        n = candidate_name.lower()
+                        # family parts must appear
+                        if family_parts:
+                            for part in family_parts:
+                                if part not in n:
+                                    return False
+                        # at least one preferred weight token must appear
+                        if pref_weights:
+                            for w in pref_weights:
+                                if w.replace(' ', '') in n or w in n:
+                                    return True
+                            return False
+                        # if no explicit weight found in preferred_title, accept family-only match
+                        return True
+
+                    # collect exact family+weight matches first
+                    preferred_candidates = [f for f in font_files if candidate_matches_family_and_weight(f)]
+                    if preferred_candidates:
+                        # pick the candidate with the shortest filename (prefer direct font files) as a tiebreaker
+                        preferred_candidates.sort(key=lambda x: (len(x), x))
+                        chosen = preferred_candidates[0]
+                        self.logger.info(f"Preferred-title early match chose '{chosen}' from {len(preferred_candidates)} candidates for preferred '{preferred_title}'")
+                        zip_ref.extract(chosen, self.fonts_dir)
+                        return os.path.normpath(os.path.join(self.fonts_dir, chosen))
+
                 # Ranking heuristic
                 def score_name(name: str) -> int:
                     n = name.lower()
                     score = 0
+                    # normalized slug for candidate
+                    cand_slug = ''.join(ch for ch in n if ch.isalnum())
+                    # prepare preferred slug and weight hints
+                    pref_slug = None
+                    pref_weight = None
+                    if preferred_title:
+                        pref_slug = ''.join(ch for ch in preferred_title.lower() if ch.isalnum())
+                        # crude weight extraction from preferred title
+                        for w in ['black', 'extrabold', 'extra-bold', 'extra', 'bold', 'semibold', 'semi-bold', 'semi', 'medium', 'regular', 'light', 'thin', 'heavy']:
+                            if w in preferred_title.lower():
+                                pref_weight = w
+                                break
                     # prefer common weights; these are baseline boosts
                     # Note: biasing toward bold/black/extra-bold by default when no preferred_title
                     if any(k in n for k in ['regular', 'roman', 'normal', 'book']):
@@ -1336,28 +1512,41 @@ class ImageTranslator:
                     # semibold is less preferred than true bold/black
                     if any(k in n for k in ['semibold', 'semi-bold', 'semib']):
                         score += 10
-                    # strong boost for bold-like weights
+                    # moderate boost for black/extra-bold/heavy; we'll avoid overpowering semibold
                     if any(k in n for k in ['black', 'extra-bold', 'extrabold', 'heavy']):
-                        score += 120
-                        if not preferred_title:
-                            # extra bias when user didn't request a specific title
-                            score += 60
+                        score += 30
                     elif 'bold' in n:
-                        # generic 'bold' (catch other bold variants) gets a strong boost too
-                        score += 80
-                        if not preferred_title:
-                            score += 40
+                        # generic 'bold' gets a moderate boost
+                        score += 20
                     # penalize decorative/outline/demo/trial variants
                     if any(k in n for k in ['outline', 'shadow', 'stencil', 'stamp', 'demo', 'trial', 'oblique', 'inline']):
                         score -= 50
                     # prefer ttf slightly over otf (arbitrary)
                     if n.endswith('.ttf'):
                         score += 2
-                    # boost if parts of the preferred title are present
-                    if preferred_title:
-                        for part in preferred_title.lower().replace('-', ' ').split():
-                            if part and part in n:
-                                score += 10
+                    # If preferred_title is provided, strongly prefer an exact slug match
+                    if pref_slug:
+                        if pref_slug in cand_slug:
+                            # huge boost for exact-like matches to ensure we pick the requested family/variant
+                            score += 1000
+                        else:
+                            # boost presence of any individual parts of preferred_title
+                            for part in preferred_title.lower().replace('-', ' ').split():
+                                if part and part in n:
+                                    score += 20
+                    # Boost if candidate contains the same weight hint as preferred_title
+                    if pref_weight:
+                        # Strong special-case: if the preferred title wants semibold, make semibold candidates dominant
+                        if pref_weight in ('semibold', 'semi-bold', 'semi'):
+                            if any(k in n for k in ['semibold', 'semi-bold', 'semi', 'semib']):
+                                score += 800
+                        else:
+                            if pref_weight.replace('-', '') in cand_slug:
+                                score += 200
+                            else:
+                                # if pref_weight is short like 'semi', also try to match 'semibold' variants
+                                if pref_weight in ('semi',) and 'semibold' in cand_slug:
+                                    score += 200
                     return score
 
                 # Score all candidates and log them for transparency
@@ -1721,7 +1910,7 @@ class ImageTranslator:
 
 if __name__ == "__main__":
     # Just modify these two lines to change the image and language
-    image_path = "test-images/test1.PNG"
+    image_path = "test-images/test20.PNG"
     target_language = "german"
     
     translator = ImageTranslator(image_path, target_language)
