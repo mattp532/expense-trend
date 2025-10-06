@@ -68,3 +68,8 @@ The current implementation is intentionally monolithic for experimentation. To i
 2. Provide a simple HTTP API (FastAPI recommended) with endpoints to upload images and request processing.
 3. Offload heavy steps (font detection, GPT calls, inpainting) to background workers (RQ/Celery) so HTTP requests return quickly with job IDs.
 4. Store artifacts (images, fonts) in object storage (S3) in production.
+create an env with
+WHATFONTIS_API_KEY=
+OPENAI_API_KEY =
+AZURE_API_KEY=
+REPLICATE_API_KEY=
