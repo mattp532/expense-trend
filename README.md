@@ -19,10 +19,10 @@
 
 3. Set required environment variables (example using PowerShell):
 
-    # $env:AZURE_API_KEY = "<your-azure-key>"
-    # $env:AZURE_ENDPOINT = "https://<your-azure-endpoint>"
-    # $env:REPLICATE_API_KEY = "<your-replicate-key>"
-    # $env:WHATFONTIS_API_KEY = "<your-whatfontis-key>"
+    $env:AZURE_API_KEY = "<your-azure-key>"
+    $env:AZURE_ENDPOINT = "https://<your-azure-endpoint>"
+    $env:REPLICATE_API_KEY = "<your-replicate-key>"
+    $env:WHATFONTIS_API_KEY = "<your-whatfontis-key>"
     $env:SEGMENT_MASK_DEBUG = "1"
     $env:SEGMENT_MASK_DILATE = "20"
 
