@@ -59,16 +59,6 @@ Run the container (mount `process-images` and `fonts` so outputs persist locally
 - `SEGMENT_MASK_EXPAND_MODE` — `dt` (distance transform, smoother) or `morph` (morphological dilation).
 - `SEGMENT_MASK_CLOSE_KERNEL` — Kernel size for morphological close smoothing.
 - `SEGMENT_MASK_DEBUG` — If `1`, saves debug masks to `process-images/debug_masks/`.
-
-## Integrating into a web app
-
-The current implementation is intentionally monolithic for experimentation. To integrate into an app:
-
-1. Split code into modules (OCR, segmentation, fonts, translation, inpaint, render, utils).
-2. Provide a simple HTTP API (FastAPI recommended) with endpoints to upload images and request processing.
-3. Offload heavy steps (font detection, GPT calls, inpainting) to background workers (RQ/Celery) so HTTP requests return quickly with job IDs.
-4. Store artifacts (images, fonts) in object storage (S3) in production.
-create an env with
 WHATFONTIS_API_KEY=
 OPENAI_API_KEY =
 AZURE_API_KEY=
